@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
+    "baseUrl": "src",
+    "paths": {
+      "*": ["*", "lib/*"]
+    },
     "inlineSourceMap": true,
     "inlineSources": true,
     "module": "ESNext",
@@ -9,6 +12,7 @@
     "noImplicitAny": true,
     "moduleResolution": "node",
     "importHelpers": true,
+    "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
     "strictNullChecks": true,
     "lib": [
@@ -16,9 +20,11 @@
       "ES5",
       "ES6",
       "ES7"
-    ]
+    ],
+    "typeRoots": ["./types", "./node_modules/@types"]
   },
   "include": [
-    "**/*.ts"
+    "src/**/*.ts",
+    "types/**/*.d.ts"
   ]
 }
