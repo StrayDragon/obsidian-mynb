@@ -3,7 +3,11 @@ name: CD
 on:
   push:
     tags:
-      - "v*"
+      - "*"
+
+env:
+  PLUGIN_NAME: obsidian-mynb # Change this to the name of your plugin-id folder
+
 
 jobs:
   release-plugin:
@@ -16,28 +20,28 @@ jobs:
       - uses: pnpm/action-setup@v4
         name: Install pnpm
         with:
-          version: 9
           run_install: false
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: "18.x"
           cache: 'pnpm'
 
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build
-        run: pnpm run build
-
-      - name: Create release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dependencies and BuildPackage
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          cd output/obsidian-mynb/
-          gh release create "$tag" \
-            --title="$tag" \
-            --draft \
-            main.js manifest.json styles.css
+          pnpm install
+          pnpm run build
+          zip -r ${{ env.PLUGIN_NAME }}-${{ env.tag }}.zip output/${{ env.PLUGIN_NAME }}
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          # main.css
+          generate_release_notes: true
+          draft: true
+          files: |
+            output/${{ env.PLUGIN_NAME }}/main.js
+            output/${{ env.PLUGIN_NAME }}/manifest.json
+            output/${{ env.PLUGIN_NAME }}/styles.css
+            ${{ env.PLUGIN_NAME }}-${{ env.tag }}.zip
