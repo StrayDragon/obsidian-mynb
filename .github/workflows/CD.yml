@@ -35,7 +35,7 @@ jobs:
         run: |
           pnpm install
           pnpm run build
-          zip -r output/${{ env.PLUGIN_NAME }}-${{ env.TAG }}.zip output/${{ env.PLUGIN_NAME }}
+          zip -r ${{ env.PLUGIN_NAME }}-${{ env.TAG }}.zip output/${{ env.PLUGIN_NAME }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -44,3 +44,4 @@ jobs:
           draft: true
           files: |
             output/${{ env.PLUGIN_NAME }}/*
+            ${{ env.PLUGIN_NAME }}-${{ env.TAG }}.zip
