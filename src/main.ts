@@ -53,12 +53,12 @@ export default class MyNBPlugin extends Plugin {
 			})
 		);
 
-		// 命令-笔记统计
+		// 命令-文件数统计面板
 		this.addCommand({
-			id: 'open-note-statistics',
-			name: 'show note statistics',
+			id: 'open-files-count-statistics-panel',
+			name: 'open files count statistics panel',
 			callback: () => {
-				new NoteStatisticsModal(this.app, this).open();
+				new FilesCountStatisticsModal(this.app, this).open();
 			}
 		});
 	}
@@ -74,7 +74,7 @@ export default class MyNBPlugin extends Plugin {
 	}
 }
 
-class NoteStatisticsModal extends Modal {
+class FilesCountStatisticsModal extends Modal {
 	app: App;
 	notes: TFile[] = [];
 	sortOrder: 'asc' | 'desc' = 'asc';
