@@ -3,7 +3,9 @@
 ## 功能
 
 - 右键文件浏览器：创建文件夹同名笔记
+![image](./docs/assets/add-same-dir-name-note-min.png)
 - 命令: 文件数统计面板
+![image](./docs/assets/open-files-count-statistics-panel-min.png)
 
 ## 安装
 
