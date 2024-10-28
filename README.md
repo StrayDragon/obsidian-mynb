@@ -32,7 +32,5 @@
 0. 安装依赖 `pnpm i`
 1. 修改代码
 2. 根据 [本地调试](#本地调试) 中的步骤测试
-3. (可选: 发布者处理) 检查并修改即将发布的版本号
-  - `manifest.json`
-  - `versions.json`
+3. 检查并修改即将发布的版本号, 修改 `package.json` 后运行 `pnpm run version`
 4. 提 PR 提交代码

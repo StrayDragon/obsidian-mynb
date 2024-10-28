@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-mynb",
-	"version": "0.0.1",
+	"version": "2024.10.28",
 	"description": "obsidian mynb plugin",
 	"main": "main.js",
 	"scripts": {
