@@ -24,41 +24,72 @@ export default class MyNBPlugin extends Plugin {
 
 		this.addSettingTab(new MyNBPluginSettingTab(this.app, this));
 
-		// 功能-右键文件浏览器：添加文件菜单项
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file) => {
+				// 功能-右键文件浏览器：添加文件菜单项
 				if (file instanceof TFolder && file.path !== "/") {
 					menu.addItem((item) => {
 						item
 							.setTitle("创建文件夹同名笔记")
-							.setIcon("document")
+							.setIcon("file-plus-2")
 							.onClick(async () => {
 								try {
 									const folderName = file.name;
 									const newFilePath = `${file.path}/${folderName}.md`;
 
-									// 检查文件是否已存在
 									if (this.app.vault.getAbstractFileByPath(newFilePath) instanceof TFile) {
 										throw new Error("文件已存在");
 									}
 
 									await this.app.vault.create(newFilePath, "");
 									new Notice(`成功创建笔记: ${folderName}`);
-									} catch (error) {
-										new Notice(`创建笔记失败: ${error.message}`);
+								} catch (error) {
+									new Notice(`创建笔记失败: ${error.message}`);
+								}
+							});
+					});
+				}
+
+				// 功能-右键文件浏览器: 笔记转换为同名文件夹功能
+				if (file instanceof TFile && file.extension === "md") {
+					menu.addItem((item) => {
+						item
+							.setTitle("转换为同名文件夹")
+							.setIcon("folder-input")
+							.onClick(async () => {
+								try {
+									if (!file.parent) {
+										throw new Error("无法在根目录执行此操作");
 									}
+
+									const noteName = file.basename;
+									const folderPath = `${file.parent.path}/${noteName}`;
+									if (this.app.vault.getAbstractFileByPath(folderPath) instanceof TFolder) {
+										throw new Error("同名文件夹已存在");
+									}
+
+									await this.app.vault.createFolder(folderPath);
+									await this.app.fileManager.renameFile(
+										file,
+										`${folderPath}/${noteName}.md`
+									);
+
+									new Notice(`成功将笔记转换为文件夹: ${noteName}`);
+								} catch (error) {
+									new Notice(`转换失败: ${error.message}`);
+								}
 							});
 					});
 				}
 			})
 		);
 
-		// 命令-笔记统计
+		// 命令-文件数统计面板
 		this.addCommand({
-			id: 'open-note-statistics',
-			name: 'show note statistics',
+			id: 'open-files-count-statistics-panel',
+			name: 'open files count statistics panel',
 			callback: () => {
-				new NoteStatisticsModal(this.app, this).open();
+				new FilesCountStatisticsModal(this.app, this).open();
 			}
 		});
 	}
@@ -74,7 +105,7 @@ export default class MyNBPlugin extends Plugin {
 	}
 }
 
-class NoteStatisticsModal extends Modal {
+class FilesCountStatisticsModal extends Modal {
 	app: App;
 	notes: TFile[] = [];
 	sortOrder: 'asc' | 'desc' = 'asc';
@@ -214,11 +245,17 @@ class NoteStatisticsModal extends Modal {
 			text: `${this.folderCounts.get(folder.path) || 0}`
 		});
 
+		// 如果文件夹已展开，添加对应的类
+		if (this.expandedFolders.has(folder.path)) {
+			folderEl.addClass('obsidian-mynb-folder-open');
+		}
+
 		folderEl.addEventListener('click', (e) => {
 			e.stopPropagation();
 			this.toggleFolder(folder.path, folderEl);
 		});
 
+		// 如果文件夹已展开，直接渲染子文件夹
 		if (this.expandedFolders.has(folder.path)) {
 			const subFolders = folder.children.filter(child => child instanceof TFolder) as TFolder[];
 			await this.sortFolders(subFolders);
@@ -228,8 +265,9 @@ class NoteStatisticsModal extends Modal {
 		}
 	}
 
-	toggleFolder(folderPath: string, folderEl: HTMLElement) {
+	async toggleFolder(folderPath: string, folderEl: HTMLElement) {
 		if (this.expandedFolders.has(folderPath)) {
+			// 关闭文件夹
 			this.expandedFolders.delete(folderPath);
 			folderEl.removeClass('obsidian-mynb-folder-open');
 			let nextEl = folderEl.nextElementSibling;
@@ -240,9 +278,43 @@ class NoteStatisticsModal extends Modal {
 				current.remove();
 			}
 		} else {
+			// 展开文件夹
 			this.expandedFolders.add(folderPath);
 			folderEl.addClass('obsidian-mynb-folder-open');
-			this.updateFolderList();
+
+			// 获取文件夹对象
+			const folder = this.app.vault.getAbstractFileByPath(folderPath);
+			if (folder instanceof TFolder) {
+				const subFolders = folder.children.filter(child => child instanceof TFolder) as TFolder[];
+				await this.sortFolders(subFolders);
+
+				// 找到当前文件夹的下一个同级元素（如果有的话）
+				let nextSiblingEl = folderEl.nextElementSibling;
+				while (nextSiblingEl &&
+					   nextSiblingEl.classList.contains('obsidian-mynb-folder') &&
+					   (nextSiblingEl as HTMLElement).style.paddingLeft > folderEl.style.paddingLeft) {
+					nextSiblingEl = nextSiblingEl.nextElementSibling;
+				}
+
+				const parentEl = folderEl.parentElement;
+				if (!parentEl) return;
+
+				const nextLevel = parseInt(folderEl.style.paddingLeft) / 20 + 1;
+
+				// 为每个子文件夹创建元素
+				for (const subFolder of subFolders) {
+					const subFolderEl = document.createElement('div');
+					await this.renderFolder(subFolder, subFolderEl, nextLevel);
+
+					// 如果存在下一个同级元素，在它之前插入
+					if (nextSiblingEl) {
+						parentEl.insertBefore(subFolderEl.firstChild!, nextSiblingEl);
+					} else {
+						// 否则添加到父元素末尾
+						parentEl.appendChild(subFolderEl.firstChild!);
+					}
+				}
+			}
 		}
 	}
 
