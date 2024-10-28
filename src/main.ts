@@ -24,29 +24,60 @@ export default class MyNBPlugin extends Plugin {
 
 		this.addSettingTab(new MyNBPluginSettingTab(this.app, this));
 
-		// 功能-右键文件浏览器：添加文件菜单项
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file) => {
+				// 功能-右键文件浏览器：添加文件菜单项
 				if (file instanceof TFolder && file.path !== "/") {
 					menu.addItem((item) => {
 						item
 							.setTitle("创建文件夹同名笔记")
-							.setIcon("document")
+							.setIcon("file-plus-2")
 							.onClick(async () => {
 								try {
 									const folderName = file.name;
 									const newFilePath = `${file.path}/${folderName}.md`;
 
-									// 检查文件是否已存在
 									if (this.app.vault.getAbstractFileByPath(newFilePath) instanceof TFile) {
 										throw new Error("文件已存在");
 									}
 
 									await this.app.vault.create(newFilePath, "");
 									new Notice(`成功创建笔记: ${folderName}`);
-									} catch (error) {
-										new Notice(`创建笔记失败: ${error.message}`);
+								} catch (error) {
+									new Notice(`创建笔记失败: ${error.message}`);
+								}
+							});
+					});
+				}
+
+				// 功能-右键文件浏览器: 笔记转换为同名文件夹功能
+				if (file instanceof TFile && file.extension === "md") {
+					menu.addItem((item) => {
+						item
+							.setTitle("转换为同名文件夹")
+							.setIcon("folder-input")
+							.onClick(async () => {
+								try {
+									if (!file.parent) {
+										throw new Error("无法在根目录执行此操作");
 									}
+
+									const noteName = file.basename;
+									const folderPath = `${file.parent.path}/${noteName}`;
+									if (this.app.vault.getAbstractFileByPath(folderPath) instanceof TFolder) {
+										throw new Error("同名文件夹已存在");
+									}
+
+									await this.app.vault.createFolder(folderPath);
+									await this.app.fileManager.renameFile(
+										file,
+										`${folderPath}/${noteName}.md`
+									);
+
+									new Notice(`成功将笔记转换为文件夹: ${noteName}`);
+								} catch (error) {
+									new Notice(`转换失败: ${error.message}`);
+								}
 							});
 					});
 				}
