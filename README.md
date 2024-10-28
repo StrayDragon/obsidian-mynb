@@ -4,9 +4,9 @@
 
 - 右键文件浏览器
   - 创建文件夹同名笔记
-    ![image](./docs/assets/add-same-dir-name-note.png)
+    - ![image](./docs/assets/add-same-dir-name-note.png)
   - 转换为同名文件夹
-    ![image](./docs/assets/convert-to-same-name-dirnote.png)
+    - ![image](./docs/assets/convert-to-same-name-dirnote.png)
 - 命令: 文件数统计面板
 ![image](./docs/assets/open-files-count-statistics-panel.png)
 
