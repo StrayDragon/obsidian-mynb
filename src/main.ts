@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Modal } from 'obsidian';
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Modal, ItemView, WorkspaceLeaf } from 'obsidian';
 
 const PLUGIN_NAME: string = "MyNBPlugin";
 
@@ -8,6 +8,69 @@ interface MyNBPluginSettings {
 
 const DEFAULT_SETTINGS: MyNBPluginSettings = {
 	enableDebugMode: false
+}
+
+interface NetworkImageNote {
+	file: TFile;
+	images: string[];
+}
+
+class NetworkImageView extends ItemView {
+	notes: NetworkImageNote[] = [];
+	plugin: MyNBPlugin;
+
+	constructor(leaf: WorkspaceLeaf, plugin: MyNBPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+	}
+
+	getViewType(): string {
+		return "network-image-view";
+	}
+
+	getDisplayText(): string {
+		return "网络图片笔记";
+	}
+
+	async setNotes(notes: NetworkImageNote[]) {
+		this.notes = notes;
+		await this.refresh();
+	}
+
+	async refresh() {
+		const container = this.containerEl.children[1];
+		container.empty();
+
+		const header = container.createEl("h3", { text: "包含网络图片的笔记" });
+
+		if (this.notes.length === 0) {
+			container.createEl("p", { text: "未找到包含网络图片的笔记" });
+			return;
+		}
+
+		const noteList = container.createEl("div", { cls: "network-image-list" });
+
+		for (const note of this.notes) {
+			const noteEl = noteList.createEl("div", { cls: "network-image-item" });
+
+			const titleEl = noteEl.createEl("div", {
+				cls: "network-image-title",
+				text: note.file.basename
+			});
+
+			titleEl.addEventListener("click", async () => {
+				await this.app.workspace.getLeaf().openFile(note.file);
+			});
+
+			const imageList = noteEl.createEl("div", { cls: "network-image-urls" });
+			for (const img of note.images) {
+				imageList.createEl("div", {
+					cls: "network-image-url",
+					text: img
+				});
+			}
+		}
+	}
 }
 
 export default class MyNBPlugin extends Plugin {
@@ -81,6 +144,25 @@ export default class MyNBPlugin extends Plugin {
 							});
 					});
 				}
+
+				// 功能-右键文件浏览器: 查询有网络图片的笔记
+				if (file instanceof TFolder) {
+					menu.addItem((item) => {
+						item
+							.setTitle("查询有网络图片的笔记")
+							.setIcon("search")
+							.onClick(async () => {
+								try {
+									const notes = await this.findNetworkImageNotes(file);
+									const view = await this.activateView();
+									await view.setNotes(notes);
+									new Notice(`找到 ${notes.length} 个包含网络图片的笔记`);
+								} catch (error) {
+									new Notice(`查询失败: ${error.message}`);
+								}
+							});
+					});
+				}
 			})
 		);
 
@@ -92,6 +174,11 @@ export default class MyNBPlugin extends Plugin {
 				new FilesCountStatisticsModal(this.app, this).open();
 			}
 		});
+
+		this.registerView(
+			"network-image-view",
+			(leaf) => new NetworkImageView(leaf, this)
+		);
 	}
 
 	onunload() { }
@@ -102,6 +189,60 @@ export default class MyNBPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	async activateView() {
+		const { workspace } = this.app;
+
+		let leaf: WorkspaceLeaf | null = null;
+		const leaves = workspace.getLeavesOfType("network-image-view");
+
+		if (leaves.length > 0) {
+			leaf = leaves[0];
+		} else {
+			leaf = workspace.getRightLeaf(false);
+			if (!leaf) {
+				leaf = workspace.getLeaf('split', 'vertical');
+			}
+			await leaf.setViewState({ type: "network-image-view" });
+		}
+
+		workspace.revealLeaf(leaf);
+		return leaf.view as NetworkImageView;
+	}
+
+	isNetworkUrl(url: string): boolean {
+		return url.startsWith("http://") || url.startsWith("https://");
+	}
+
+	async findNetworkImageNotes(folder: TFolder): Promise<NetworkImageNote[]> {
+		const results: NetworkImageNote[] = [];
+
+		const searchFiles = async (folder: TFolder) => {
+			for (const child of folder.children) {
+				if (child instanceof TFile && child.extension === "md") {
+					const content = await this.app.vault.read(child);
+					const imageRegex = /!\[.*?\]\((.*?)\)/g;
+					const matches = [...content.matchAll(imageRegex)];
+
+					const networkImages = matches
+						.map(match => match[1])
+						.filter(url => this.isNetworkUrl(url));
+
+					if (networkImages.length > 0) {
+						results.push({
+							file: child,
+							images: networkImages
+						});
+					}
+				} else if (child instanceof TFolder) {
+					await searchFiles(child);
+				}
+			}
+		};
+
+		await searchFiles(folder);
+		return results;
 	}
 }
 

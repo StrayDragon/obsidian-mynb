@@ -7,8 +7,11 @@
     - ![image](./docs/assets/add-same-dir-name-note.png)
   - 转换为同名文件夹
     - ![image](./docs/assets/convert-to-same-name-dirnote.png)
+  - 查询有网络图片的笔记
+    - ![image](./docs/assets/find-network-image-notes.png)
 - 命令: 文件数统计面板
 ![image](./docs/assets/open-files-count-statistics-panel.png)
+
 
 ## 安装
 
