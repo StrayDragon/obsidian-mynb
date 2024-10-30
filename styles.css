@@ -102,3 +102,35 @@ If your plugin does not need CSS, delete this file.
 .obsidian-mynb-sort-select {
 	width: 200px;
 }
+
+.network-image-list {
+	padding: 10px;
+}
+
+.network-image-item {
+	margin-bottom: 20px;
+	padding: 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 5px;
+}
+
+.network-image-title {
+	font-weight: bold;
+	margin-bottom: 8px;
+	cursor: pointer;
+	color: var(--interactive-accent);
+}
+
+.network-image-title:hover {
+	text-decoration: underline;
+}
+
+.network-image-urls {
+	font-size: 0.9em;
+	color: var(--text-muted);
+}
+
+.network-image-url {
+	margin: 4px 0;
+	word-break: break-all;
+}
