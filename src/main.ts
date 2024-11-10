@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Modal, ItemView, WorkspaceLeaf } from 'obsidian';
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Modal, ItemView, WorkspaceLeaf, Editor } from 'obsidian';
 
 const PLUGIN_NAME: string = "MyNBPlugin";
 
@@ -25,7 +25,7 @@ class NetworkImageView extends ItemView {
 	}
 
 	getViewType(): string {
-		return "network-image-view";
+		return "obsidian-mynb-network-image-view";
 	}
 
 	getDisplayText(): string {
@@ -48,13 +48,13 @@ class NetworkImageView extends ItemView {
 			return;
 		}
 
-		const noteList = container.createEl("div", { cls: "network-image-list" });
+		const noteList = container.createEl("div", { cls: "obsidian-mynb-network-image-list" });
 
 		for (const note of this.notes) {
-			const noteEl = noteList.createEl("div", { cls: "network-image-item" });
+			const noteEl = noteList.createEl("div", { cls: "obsidian-mynb-network-image-item" });
 
 			const titleEl = noteEl.createEl("div", {
-				cls: "network-image-title",
+				cls: "obsidian-mynb-network-image-title",
 				text: note.file.basename
 			});
 
@@ -62,10 +62,10 @@ class NetworkImageView extends ItemView {
 				await this.app.workspace.getLeaf().openFile(note.file);
 			});
 
-			const imageList = noteEl.createEl("div", { cls: "network-image-urls" });
+			const imageList = noteEl.createEl("div", { cls: "obsidian-mynb-network-image-urls" });
 			for (const img of note.images) {
 				imageList.createEl("div", {
-					cls: "network-image-url",
+					cls: "obsidian-mynb-network-image-url",
 					text: img
 				});
 			}
@@ -149,7 +149,7 @@ export default class MyNBPlugin extends Plugin {
 				if (file instanceof TFolder) {
 					menu.addItem((item) => {
 						item
-							.setTitle("查询有网络图片的笔记")
+							.setTitle("打开侧栏网络图片笔记视图")
 							.setIcon("search")
 							.onClick(async () => {
 								try {
@@ -169,15 +169,63 @@ export default class MyNBPlugin extends Plugin {
 		// 命令-文件数统计面板
 		this.addCommand({
 			id: 'open-files-count-statistics-panel',
-			name: 'open files count statistics panel',
+			name: '打开文件数统计面板',
 			callback: () => {
 				new FilesCountStatisticsModal(this.app, this).open();
 			}
 		});
 
+		// 视图-网络图片列表边栏
 		this.registerView(
-			"network-image-view",
+			"obsidian-mynb-network-image-view",
 			(leaf) => new NetworkImageView(leaf, this)
+		);
+
+		// 添加网络图片查询命令
+		this.addCommand({
+			id: 'find-network-image-notes',
+			name: '查询-网络图片笔记',
+			callback: async () => {
+				try {
+					const notes = await this.findNetworkImageNotes(this.app.vault.getRoot());
+					const view = await this.activateView();
+					await view.setNotes(notes);
+					new Notice(`找到 ${notes.length} 个包含网络图片的笔记`);
+				} catch (error) {
+					new Notice(`查询失败: ${error.message}`);
+				}
+			}
+		});
+
+		// 命令-重构所选文本中标题级别
+		this.addCommand({
+			id: 'adjust-heading-level',
+			name: '重构-选中文本-调整标题级别',
+			editorCallback: (editor) => {
+				const selection = editor.getSelection();
+				if (selection) {
+					new HeadingLevelModal(this.app, editor).open();
+				} else {
+					new Notice('请先选择文本');
+				}
+			}
+		});
+
+		// 功能-右键编辑区选中文本: 重构所选文本中标题级别
+		this.registerEvent(
+			this.app.workspace.on("editor-menu", (menu, editor) => {
+				const selection = editor.getSelection();
+				if (selection) {
+					menu.addItem((item) => {
+						item
+							.setTitle("重构-调整标题级别")
+							.setIcon("hash")
+							.onClick(() => {
+								new HeadingLevelModal(this.app, editor).open();
+							});
+					});
+				}
+			})
 		);
 	}
 
@@ -195,7 +243,7 @@ export default class MyNBPlugin extends Plugin {
 		const { workspace } = this.app;
 
 		let leaf: WorkspaceLeaf | null = null;
-		const leaves = workspace.getLeavesOfType("network-image-view");
+		const leaves = workspace.getLeavesOfType("obsidian-mynb-network-image-view");
 
 		if (leaves.length > 0) {
 			leaf = leaves[0];
@@ -204,7 +252,7 @@ export default class MyNBPlugin extends Plugin {
 			if (!leaf) {
 				leaf = workspace.getLeaf('split', 'vertical');
 			}
-			await leaf.setViewState({ type: "network-image-view" });
+			await leaf.setViewState({ type: "obsidian-mynb-network-image-view" });
 		}
 
 		workspace.revealLeaf(leaf);
@@ -551,5 +599,78 @@ class MyNBPluginSettingTab extends PluginSettingTab {
 					this.plugin.settings.enableDebugMode = value;
 					await this.plugin.saveSettings();
 				}));
+	}
+}
+
+class HeadingLevelModal extends Modal {
+	editor: Editor;
+
+	constructor(app: App, editor: Editor) {
+		super(app);
+		this.editor = editor;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl('h2', { text: '选择标题级别' });
+
+		const buttonContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-heading-level-buttons' });
+
+		for (let i = 1; i <= 6; i++) {
+			const button = buttonContainer.createEl('button', {
+				text: `H${i}`,
+				cls: 'obsidian-mynb-heading-level-button'
+			});
+
+			button.addEventListener('click', () => {
+				this.adjustHeadingLevel(i);
+				this.close();
+			});
+		}
+
+		const removeButton = buttonContainer.createEl('button', {
+			text: '移除标题',
+			cls: 'obsidian-mynb-heading-level-button remove'
+		});
+		removeButton.addEventListener('click', () => {
+			this.adjustHeadingLevel(0);
+			this.close();
+		});
+	}
+
+	adjustHeadingLevel(level: number) {
+		const selection = this.editor.getSelection();
+		if (!selection) return;
+
+		const lines = selection.split('\n');
+		const adjustedLines = lines.map(line => {
+			// 只处理已经是标题的行
+			if (line.match(/^#{1,6}\s/)) {
+				// 移除现有的标题标记
+				line = line.replace(/^#{1,6}\s/, '');
+
+				// 添加新的标题标记（如果level为0则不添加）
+				if (level > 0) {
+					line = '#'.repeat(level) + ' ' + line;
+				}
+			}
+			return line;
+		});
+
+		const newText = adjustedLines.join('\n');
+		const from = this.editor.posToOffset(this.editor.getCursor('from'));
+		const to = this.editor.posToOffset(this.editor.getCursor('to'));
+
+		this.editor.replaceRange(newText,
+			this.editor.offsetToPos(from),
+			this.editor.offsetToPos(to)
+		);
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }
