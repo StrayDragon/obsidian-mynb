@@ -9,6 +9,11 @@
     - ![image](./docs/assets/convert-to-same-name-dirnote.png)
   - 查询有网络图片的笔记
     - ![image](./docs/assets/find-network-image-notes.png)
+- 右键编辑区
+  - 调整标题级别
+    - ![image](./docs/assets/adjust-heading-level.png)
+  - 选中所在章节
+    - ![image](./docs/assets/select-current-section.png)
 - 命令: 文件数统计面板
 ![image](./docs/assets/open-files-count-statistics-panel.png)
 

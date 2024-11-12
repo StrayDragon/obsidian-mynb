@@ -227,6 +227,20 @@ export default class MyNBPlugin extends Plugin {
 				}
 			})
 		);
+
+		// 功能-右键编辑区: 选中所在章节
+		this.registerEvent(
+			this.app.workspace.on("editor-menu", (menu, editor) => {
+				menu.addItem((item) => {
+					item
+						.setTitle("辅助-选中所在章节")
+						.setIcon("text-select")
+						.onClick(() => {
+							this.selectCurrentSection(editor);
+						});
+				});
+			})
+		);
 	}
 
 	onunload() { }
@@ -291,6 +305,48 @@ export default class MyNBPlugin extends Plugin {
 
 		await searchFiles(folder);
 		return results;
+	}
+
+	private selectCurrentSection(editor: Editor) {
+		const cursor = editor.getCursor();
+		const content = editor.getValue();
+		const lines = content.split('\n');
+
+		let startLine = -1;
+		for (let i = cursor.line; i >= 0; i--) {
+			if (lines[i].match(/^#{1,6}\s/)) {
+				startLine = i;
+				break;
+			}
+		}
+
+		if (startLine === -1) {
+			new Notice('当前位置不在任何章节内');
+			return;
+		}
+
+		const headingMatch = lines[startLine].match(/^(#{1,6})\s/);
+		if (!headingMatch) {
+			new Notice('无法识别标题级别');
+			return;
+		}
+		const currentLevel = headingMatch[1].length;
+
+		let endLine = lines.length;
+		for (let i = startLine + 1; i < lines.length; i++) {
+			const match = lines[i].match(/^(#{1,6})\s/);
+			if (match && match[1].length <= currentLevel) {
+				endLine = i;
+				break;
+			}
+		}
+
+		editor.setSelection(
+			{ line: startLine, ch: 0 },
+			{ line: endLine - 1, ch: lines[endLine - 1].length }
+		);
+
+		editor.scrollIntoView({ from: { line: startLine, ch: 0 }, to: { line: startLine, ch: 0 } });
 	}
 }
 
