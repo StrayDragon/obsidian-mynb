@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-mynb",
 	"name": "MyNB",
-	"version": "2024.11.10",
+	"version": "2024.11.12",
 	"minAppVersion": "0.15.0",
 	"description": "My Private Extension for Obsidian",
 	"author": "StrayDragon",
