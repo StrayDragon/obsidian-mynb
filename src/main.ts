@@ -89,7 +89,7 @@ export default class MyNBPlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file) => {
-				// 功能-右键文件浏览器：添加文件菜单项
+				// 功能-右键文件浏览器：添加文菜单项
 				if (file instanceof TFolder && file.path !== "/") {
 					menu.addItem((item) => {
 						item
@@ -169,7 +169,7 @@ export default class MyNBPlugin extends Plugin {
 		// 命令-文件数统计面板
 		this.addCommand({
 			id: 'open-files-count-statistics-panel',
-			name: '打开文件数统计面板',
+			name: '统计: 打开文件数面板',
 			callback: () => {
 				new FilesCountStatisticsModal(this.app, this).open();
 			}
@@ -241,6 +241,15 @@ export default class MyNBPlugin extends Plugin {
 				});
 			})
 		);
+
+		// 在 MyNBPlugin 类的 onload() 方法中添加新命令
+		this.addCommand({
+			id: 'open-clean-empty-modal',
+			name: '清理-打开空目录和空文件清理面板',
+			callback: () => {
+				new CleanEmptyModal(this.app, this).open();
+			}
+		});
 	}
 
 	onunload() { }
@@ -391,6 +400,7 @@ class FilesCountStatisticsModal extends Modal {
 			{ value: 'mtime_desc', text: '编辑时间 (从新到旧)' },
 			{ value: 'mtime_asc', text: '编辑时间 (从旧到新)' },
 			{ value: 'ctime_desc', text: '创建时间 (从新到旧)' },
+			{ value: 'ctime_asc', text: '创建时间 (从旧到新)' },
 			{ value: 'ctime_asc', text: '创建时间 (从旧到新)' },
 		];
 
@@ -704,7 +714,7 @@ class HeadingLevelModal extends Modal {
 		const adjustedLines = lines.map(line => {
 			// 只处理已经是标题的行
 			if (line.match(/^#{1,6}\s/)) {
-				// 移除现有的标题标记
+				// 移除���有的标题标记
 				line = line.replace(/^#{1,6}\s/, '');
 
 				// 添加新的标题标记（如果level为0则不添加）
@@ -723,6 +733,365 @@ class HeadingLevelModal extends Modal {
 			this.editor.offsetToPos(from),
 			this.editor.offsetToPos(to)
 		);
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+// 在文件末尾添加新的 Modal 类
+class CleanEmptyModal extends Modal {
+	app: App;
+	plugin: MyNBPlugin;
+	emptyItems: {
+		path: string;
+		type: 'folder' | 'file';
+		selected: boolean;
+		parent?: string;
+		children: string[];
+		count?: number;  // 用于显示文件夹包含的项目数
+	}[] = [];
+	selectAll: boolean = false;
+
+	constructor(app: App, plugin: MyNBPlugin) {
+		super(app);
+		this.app = app;
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		// 创建顶部操作栏容器
+		const topBar = contentEl.createEl('div', {
+			cls: 'obsidian-mynb-clean-empty-top-bar'
+		});
+
+		// 创建标题和按钮组容器
+		const titleGroup = topBar.createEl('div', { cls: 'obsidian-mynb-clean-empty-title-group' });
+		titleGroup.createEl('h2', { text: '清理空目录和空文件' });
+
+		// 创建按钮组容器
+		const buttonGroup = topBar.createEl('div', { cls: 'obsidian-mynb-clean-empty-button-group' });
+
+		// 创建扫描按钮
+		const scanButton = buttonGroup.createEl('button', {
+			text: '扫描',
+			cls: 'mod-cta'
+		});
+		scanButton.addEventListener('click', () => this.scanEmptyItems());
+
+		// 创建全选/反选按钮
+		const toggleAllButton = buttonGroup.createEl('button', {
+			text: '全选',
+			cls: 'obsidian-mynb-clean-empty-toggle-all'
+		});
+		toggleAllButton.addEventListener('click', () => {
+			this.selectAll = !this.selectAll;
+			this.updateSelections(resultContainer, toggleAllButton);
+		});
+		toggleAllButton.style.display = 'none';  // 初始隐藏
+
+		// 创建结果容器
+		const resultContainer = contentEl.createEl('div', {
+			cls: 'obsidian-mynb-clean-empty-container'
+		});
+
+		// 创建底部操作按钮容器
+		const actionContainer = contentEl.createEl('div', {
+			cls: 'obsidian-mynb-clean-empty-actions'
+		});
+		actionContainer.style.display = 'none';
+
+		// 创建删除按钮
+		const deleteButton = actionContainer.createEl('button', {
+			text: '删除所选项',
+			cls: 'obsidian-mynb-clean-empty-delete'
+		});
+		deleteButton.addEventListener('click', () => this.deleteSelected(resultContainer));
+	}
+
+	private async scanEmptyItems() {
+		this.emptyItems = [];
+		const rootFolder = this.app.vault.getRoot();
+		await this.scanFolder(rootFolder);
+
+		const resultContainer = this.contentEl.querySelector('.obsidian-mynb-clean-empty-container') as HTMLElement;
+		const actionContainer = this.contentEl.querySelector('.obsidian-mynb-clean-empty-actions') as HTMLElement;
+		if (resultContainer && actionContainer) {
+			resultContainer.empty();
+			this.renderResults(resultContainer);
+
+			const toggleAllButton = this.contentEl.querySelector('.obsidian-mynb-clean-empty-toggle-all') as HTMLElement;
+			const actionContainer = this.contentEl.querySelector('.obsidian-mynb-clean-empty-actions') as HTMLElement;
+
+			if (this.emptyItems.length > 0) {
+				toggleAllButton.style.display = 'block';
+				actionContainer.style.display = 'flex';
+			} else {
+				toggleAllButton.style.display = 'none';
+				actionContainer.style.display = 'none';
+			}
+		}
+	}
+
+	private async scanFolder(folder: TFolder) {
+		let hasContent = false;
+		let currentFolderItems: string[] = [];
+
+		for (const child of folder.children) {
+			if (child instanceof TFolder) {
+				const [hasSubContent, subItems] = await this.scanFolder(child);
+				if (!hasSubContent) {
+					const folderPath = child.path;
+					this.emptyItems.push({
+						path: folderPath,
+						type: 'folder',
+						selected: false,
+						parent: folder.path === '/' ? undefined : folder.path,
+						children: subItems,
+						count: subItems.length
+					});
+					currentFolderItems.push(folderPath);
+					currentFolderItems.push(...subItems);
+				} else {
+					hasContent = true;
+				}
+			} else if (child instanceof TFile) {
+				const content = await this.app.vault.read(child);
+				if (content.trim() === '') {
+					const filePath = child.path;
+					this.emptyItems.push({
+						path: filePath,
+						type: 'file',
+						selected: false,
+						parent: folder.path === '/' ? undefined : folder.path,
+						children: []
+					});
+					currentFolderItems.push(filePath);
+				} else {
+					hasContent = true;
+				}
+			}
+		}
+		return [hasContent || folder.children.length === 0, currentFolderItems] as [boolean, string[]];
+	}
+
+	private renderResults(container: HTMLElement) {
+		// 按照层级结构重新组织数据
+		const itemsByParent = new Map<string | undefined, typeof this.emptyItems>();
+		this.emptyItems.forEach(item => {
+			const parentPath = item.parent;
+			if (!itemsByParent.has(parentPath)) {
+				itemsByParent.set(parentPath, []);
+			}
+			itemsByParent.get(parentPath)?.push(item);
+		});
+
+		// 渲染根级别的项目
+		const rootItems = itemsByParent.get(undefined) || [];
+		this.renderItemsLevel(container, rootItems, itemsByParent, 0);
+	}
+
+	private renderItemsLevel(
+		container: HTMLElement,
+		items: typeof this.emptyItems,
+		itemsByParent: Map<string | undefined, typeof this.emptyItems>,
+		level: number
+	) {
+		items.forEach((item) => {
+			const itemEl = container.createEl('div', { cls: 'obsidian-mynb-clean-empty-item' });
+
+			const rowContent = itemEl.createEl('div', {
+				cls: 'obsidian-mynb-clean-empty-row',
+				attr: { style: `padding-left: ${level * 20}px` }
+			});
+
+			// 添加复选框
+			const checkbox = rowContent.createEl('input', {
+				type: 'checkbox',
+				cls: 'obsidian-mynb-clean-empty-checkbox'
+			});
+			checkbox.checked = item.selected;
+
+			// 修改复选框的点击事件处理
+			checkbox.addEventListener('change', (e) => {
+				e.stopPropagation();
+				const checked = (e.target as HTMLInputElement).checked;
+				this.updateItemSelection(item.path, checked);
+				this.refreshCheckboxes(container.closest('.obsidian-mynb-clean-empty-container') as HTMLElement);
+			});
+
+			const contentEl = rowContent.createEl('div', {
+				cls: 'obsidian-mynb-clean-empty-content'
+			});
+
+			contentEl.createEl('span', {
+				cls: `obsidian-mynb-clean-empty-icon ${item.type === 'folder' ? 'folder' : 'file'}`
+			});
+
+			const pathText = item.type === 'folder'
+				? `${item.path} (${item.count} 项)`
+				: item.path;
+
+			contentEl.createEl('span', {
+				text: pathText,
+				cls: 'obsidian-mynb-clean-empty-path'
+			});
+
+			if (item.type === 'folder') {
+				contentEl.addClass('is-folder');
+
+				// 修改行点击事件，只处理折叠/展开
+				rowContent.addEventListener('click', (e) => {
+					const target = e.target as HTMLElement;
+					if (target.tagName === 'INPUT') return;
+
+					e.stopPropagation();
+					const isCollapsed = itemEl.hasClass('is-collapsed');
+					itemEl.toggleClass('is-collapsed', !isCollapsed);
+
+					// 同时更新子容器的显示状态
+					const childrenContainer = itemEl.querySelector('.obsidian-mynb-clean-empty-children');
+					if (childrenContainer instanceof HTMLElement) {
+						childrenContainer.toggleClass('is-collapsed', !isCollapsed);
+					}
+				});
+
+				const childItems = itemsByParent.get(item.path) || [];
+				if (childItems.length > 0) {
+					const childrenContainer = itemEl.createEl('div', {
+						cls: 'obsidian-mynb-clean-empty-children'
+					});
+					this.renderItemsLevel(childrenContainer, childItems, itemsByParent, level + 1);
+				}
+			}
+		});
+	}
+
+	private updateItemSelection(path: string, selected: boolean) {
+		// 更新当前项目
+		const item = this.emptyItems.find(i => i.path === path);
+		if (!item) return;
+		item.selected = selected;
+
+		// 更新子项目（如果是文件夹）
+		if (item.type === 'folder') {
+			this.emptyItems
+				.filter(i => i.path.startsWith(path + '/'))
+				.forEach(i => {
+					i.selected = selected;
+				});
+		}
+
+		// 更新父项目
+		if (item.parent) {
+			const parentItem = this.emptyItems.find(i => i.path === item.parent);
+			if (parentItem) {
+				const siblings = this.emptyItems.filter(i => i.parent === item.parent);
+				const allSelected = siblings.every(i => i.selected);
+				if (parentItem.selected !== allSelected) {
+					parentItem.selected = allSelected;
+					// 递归更新上层父项目
+					this.updateItemSelection(parentItem.path, allSelected);
+				}
+			}
+		}
+	}
+
+	private refreshCheckboxes(container: HTMLElement) {
+		if (!container) return;
+
+		const checkboxes = container.querySelectorAll('.obsidian-mynb-clean-empty-checkbox') as NodeListOf<HTMLInputElement>;
+		checkboxes.forEach(checkbox => {
+			const itemEl = checkbox.closest('.obsidian-mynb-clean-empty-item');
+			if (!itemEl) return;
+
+			const pathEl = itemEl.querySelector('.obsidian-mynb-clean-empty-path');
+			if (!pathEl) return;
+
+			const path = pathEl.textContent?.split(' (')[0];
+			if (!path) return;
+
+			const item = this.emptyItems.find(i => i.path === path);
+			if (item) {
+				checkbox.checked = item.selected;
+			}
+		});
+	}
+
+	private updateSelections(container: HTMLElement, toggleButton: HTMLButtonElement) {
+		this.selectAll = !this.selectAll;
+		this.emptyItems.forEach(item => {
+			item.selected = this.selectAll;
+		});
+
+		// 更新所有复选框
+		const checkboxes = container.querySelectorAll('.obsidian-mynb-clean-empty-checkbox') as NodeListOf<HTMLInputElement>;
+		checkboxes.forEach(checkbox => {
+			checkbox.checked = this.selectAll;
+		});
+
+		toggleButton.setText(this.selectAll ? '取消全选' : '全选');
+	}
+
+	private async deleteSelected(container: HTMLElement) {
+		const selectedItems = this.emptyItems.filter(item => item.selected);
+		if (selectedItems.length === 0) {
+			new Notice('请先选择要删除的项目');
+			return;
+		}
+
+		const confirmed = await new Promise<boolean>((resolve) => {
+			const modal = new Modal(this.app);
+			modal.contentEl.createEl('h2', { text: '确认删除' });
+			modal.contentEl.createEl('p', { text: `确定要删除选中的 ${selectedItems.length} 个项目吗？` });
+
+			const buttonContainer = modal.contentEl.createEl('div', { cls: 'obsidian-mynb-clean-empty-confirm' });
+
+			const confirmButton = buttonContainer.createEl('button', {
+				text: '确定',
+				cls: 'mod-cta'
+			});
+			confirmButton.addEventListener('click', () => {
+				modal.close();
+				resolve(true);
+			});
+
+			const cancelButton = buttonContainer.createEl('button', {
+				text: '取消'
+			});
+			cancelButton.addEventListener('click', () => {
+				modal.close();
+				resolve(false);
+			});
+
+			modal.open();
+		});
+
+		if (!confirmed) return;
+
+		let successCount = 0;
+		let failCount = 0;
+
+		for (const item of selectedItems) {
+			try {
+				const abstractFile = this.app.vault.getAbstractFileByPath(item.path);
+				if (abstractFile) {
+					await this.app.vault.delete(abstractFile);
+					successCount++;
+				}
+			} catch (error) {
+				this.plugin.debugLog(`Failed to delete ${item.path}:`, error);
+				failCount++;
+			}
+		}
+
+		new Notice(`删除完成: ${successCount} 个成功, ${failCount} 个失败`);
+		await this.scanEmptyItems(); // 重新扫描并更新列表
 	}
 
 	onClose() {
