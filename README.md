@@ -14,8 +14,11 @@
     - ![image](./docs/assets/adjust-heading-level.png)
   - 选中所在章节
     - ![image](./docs/assets/select-current-section.png)
-- 命令: 文件数统计面板
-![image](./docs/assets/open-files-count-statistics-panel.png)
+- 命令
+  - 文件数统计面板
+  ![image](./docs/assets/open-files-count-statistics-panel.png)
+  - 清理空文件夹
+  ![image](./docs/assets/cleaner-modal.png)
 
 
 ## 安装
