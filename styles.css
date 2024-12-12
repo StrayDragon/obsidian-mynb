@@ -347,3 +347,68 @@ If your plugin does not need CSS, delete this file.
 .obsidian-mynb-tree-item-children {
     margin-left: 12px;
 }
+
+/* 未引用媒体资源视图样式 */
+.obsidian-mynb-unreferenced-media-tree {
+    padding: 10px;
+}
+
+.obsidian-mynb-unreferenced-media-folder {
+    margin-bottom: 10px;
+}
+
+.obsidian-mynb-unreferenced-media-folder-header {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.obsidian-mynb-unreferenced-media-folder-header:hover {
+    background-color: var(--background-secondary);
+}
+
+.obsidian-mynb-folder-icon {
+    margin-right: 5px;
+}
+
+.obsidian-mynb-unreferenced-media-list {
+    display: none;
+    margin-left: 20px;
+}
+
+.obsidian-mynb-unreferenced-media-folder.expanded .obsidian-mynb-unreferenced-media-list {
+    display: block;
+}
+
+.obsidian-mynb-unreferenced-media-item {
+    display: flex;
+    align-items: center;
+    padding: 3px 5px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.obsidian-mynb-unreferenced-media-item:hover {
+    background-color: var(--background-secondary);
+}
+
+.obsidian-mynb-media-icon {
+    margin-right: 5px;
+}
+
+.obsidian-mynb-media-icon.image::before {
+    content: "🖼️";
+}
+
+.obsidian-mynb-media-icon.video::before {
+    content: "🎬";
+}
+
+.obsidian-mynb-media-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

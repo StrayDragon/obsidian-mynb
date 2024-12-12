@@ -15,6 +15,14 @@ interface NetworkImageNote {
 	images: string[];
 }
 
+interface UnreferencedMedia {
+	file: TFile;
+	type: 'image' | 'video';
+}
+
+const IMAGE_EXTENSIONS = ['png', 'webp', 'gif', 'jpeg', 'jpg'];
+const VIDEO_EXTENSIONS = ['mp4', 'mkv'];
+
 class NetworkImageView extends ItemView {
 	notes: NetworkImageNote[] = [];
 	plugin: MyNBPlugin;
@@ -286,6 +294,27 @@ export default class MyNBPlugin extends Plugin {
 			"obsidian-mynb-file-explorer",
 			(leaf) => new FileExplorerView(leaf, this)
 		);
+
+		// 在 MyNBPlugin 类中添加这个方法
+		this.registerView(
+			"obsidian-mynb-unreferenced-media-view",
+			(leaf) => new UnreferencedMediaView(leaf, this)
+		);
+
+		this.addCommand({
+			id: 'find-unreferenced-media',
+			name: '查询-未引用的媒体资源',
+			callback: async () => {
+				try {
+					const media = await this.findUnreferencedMedia();
+					const view = await this.activateUnreferencedMediaView();
+					await view.setMedia(media);
+					new Notice(`找到 ${media.length} 个未引用的媒体文件`);
+				} catch (error) {
+					new Notice(`查询失败: ${error.message}`);
+				}
+			}
+		});
 	}
 
 	onunload() { }
@@ -392,6 +421,88 @@ export default class MyNBPlugin extends Plugin {
 		);
 
 		editor.scrollIntoView({ from: { line: startLine, ch: 0 }, to: { line: startLine, ch: 0 } });
+	}
+
+	private isMediaFile(file: TFile): 'image' | 'video' | null {
+		if (IMAGE_EXTENSIONS.contains(file.extension.toLowerCase())) {
+			return 'image';
+		}
+		if (VIDEO_EXTENSIONS.contains(file.extension.toLowerCase())) {
+			return 'video';
+		}
+		return null;
+	}
+
+	private async findUnreferencedMedia(): Promise<UnreferencedMedia[]> {
+		const unreferencedMedia: UnreferencedMedia[] = [];
+		const mediaFiles = new Set<string>();
+		const referencedFiles = new Set<string>();
+
+		// 收集所有媒体文件
+		const files = this.app.vault.getFiles();
+		for (const file of files) {
+			const mediaType = this.isMediaFile(file);
+			if (mediaType) {
+				mediaFiles.add(file.path);
+				unreferencedMedia.push({
+					file: file,
+					type: mediaType
+				});
+			}
+		}
+
+		// 检查所有 Markdown 文件中的引用
+		for (const file of files) {
+			if (file.extension === 'md') {
+				const content = await this.app.vault.read(file);
+
+				// 匹配 Markdown 图片语法
+				const mdImageRegex = /!\[.*?\]\((.*?)\)/g;
+				let match;
+				while ((match = mdImageRegex.exec(content)) !== null) {
+					const path = match[1].split('#')[0].split('?')[0]; // 移除锚点和查询参数
+					if (mediaFiles.has(path)) {
+						referencedFiles.add(path);
+					}
+				}
+
+				// 匹配 Wiki 链接语法
+				const wikiLinkRegex = /!\[\[(.*?)\]\]/g;
+				while ((match = wikiLinkRegex.exec(content)) !== null) {
+					const path = match[1].split('|')[0].split('#')[0]; // 移除别名和锚点
+					if (mediaFiles.has(path)) {
+						referencedFiles.add(path);
+					}
+				}
+			}
+		}
+
+		// 过滤出未引用的媒体文件
+		return unreferencedMedia.filter(media => !referencedFiles.has(media.file.path));
+	}
+
+	async activateUnreferencedMediaView() {
+		const { workspace } = this.app;
+
+		let leaf = workspace.getLeavesOfType("obsidian-mynb-unreferenced-media-view")[0];
+
+		if (!leaf) {
+			// 尝试获取右侧叶子
+			const rightLeaf = workspace.getRightLeaf(false);
+			if (rightLeaf) {
+				leaf = rightLeaf;
+			} else {
+				// 如果获取右侧叶子失败，创建新的叶子
+				leaf = workspace.getLeaf('split', 'vertical');
+			}
+			await leaf.setViewState({
+				type: "obsidian-mynb-unreferenced-media-view",
+				active: true
+			});
+		}
+
+		workspace.revealLeaf(leaf);
+		return leaf.view as UnreferencedMediaView;
 	}
 }
 
@@ -1234,5 +1345,115 @@ class FileExplorerView extends ItemView {
 		fileTitle.addEventListener("click", async () => {
 			await this.app.workspace.getLeaf().openFile(file);
 		});
+	}
+}
+
+class UnreferencedMediaView extends ItemView {
+	media: UnreferencedMedia[] = [];
+	plugin: MyNBPlugin;
+	expandedFolders: Set<string> = new Set();
+
+	constructor(leaf: WorkspaceLeaf, plugin: MyNBPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+	}
+
+	getViewType(): string {
+		return "obsidian-mynb-unreferenced-media-view";
+	}
+
+	getDisplayText(): string {
+		return "未引用的媒体资源";
+	}
+
+	async setMedia(media: UnreferencedMedia[]) {
+		this.media = media;
+		await this.refresh();
+	}
+
+	async refresh() {
+		const container = this.containerEl.children[1];
+		container.empty();
+
+		const header = container.createEl("h3", { text: "未引用的媒体资源" });
+
+		if (this.media.length === 0) {
+			container.createEl("p", { text: "未找到未引用的媒体资源" });
+			return;
+		}
+
+		// 按文件夹组织媒体文件
+		const mediaByFolder = new Map<string, UnreferencedMedia[]>();
+		for (const item of this.media) {
+			const folderPath = item.file.parent?.path || "/";
+			if (!mediaByFolder.has(folderPath)) {
+				mediaByFolder.set(folderPath, []);
+			}
+			mediaByFolder.get(folderPath)?.push(item);
+		}
+
+		const treeContainer = container.createEl("div", {
+			cls: "obsidian-mynb-unreferenced-media-tree"
+		});
+
+		// 渲染文件夹树
+		for (const [folderPath, mediaFiles] of mediaByFolder) {
+			const folderEl = treeContainer.createEl("div", {
+				cls: "obsidian-mynb-unreferenced-media-folder"
+			});
+
+			const folderHeader = folderEl.createEl("div", {
+				cls: "obsidian-mynb-unreferenced-media-folder-header"
+			});
+
+			folderHeader.createEl("span", {
+				cls: "obsidian-mynb-folder-icon"
+			});
+
+			folderHeader.createEl("span", {
+				text: `${folderPath} (${mediaFiles.length})`
+			});
+
+			// 展开/折叠功能
+			const isExpanded = this.expandedFolders.has(folderPath);
+			folderEl.toggleClass("expanded", isExpanded);
+
+			folderHeader.addEventListener("click", () => {
+				const isNowExpanded = !folderEl.hasClass("expanded");
+				folderEl.toggleClass("expanded", isNowExpanded);
+				if (isNowExpanded) {
+					this.expandedFolders.add(folderPath);
+				} else {
+					this.expandedFolders.delete(folderPath);
+				}
+			});
+
+			// 创建媒体文件列表容器
+			const mediaListEl = folderEl.createEl("div", {
+				cls: "obsidian-mynb-unreferenced-media-list"
+			});
+
+			// 渲染媒体文件
+			for (const mediaItem of mediaFiles) {
+				const mediaEl = mediaListEl.createEl("div", {
+					cls: "obsidian-mynb-unreferenced-media-item"
+				});
+
+				const iconClass = mediaItem.type === 'image' ? 'image' : 'video';
+				mediaEl.createEl("span", {
+					cls: `obsidian-mynb-media-icon ${iconClass}`
+				});
+
+				mediaEl.createEl("span", {
+					text: mediaItem.file.name,
+					cls: "obsidian-mynb-media-name"
+				});
+
+				// 添加点击事件以打开媒体文件
+				mediaEl.addEventListener("click", async () => {
+					await this.app.workspace.getLeaf().openFile(mediaItem.file);
+				});
+			}
+		}
 	}
 }
