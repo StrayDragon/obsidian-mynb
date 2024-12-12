@@ -299,3 +299,51 @@ If your plugin does not need CSS, delete this file.
 .obsidian-mynb-clean-empty-icon.folder {
     transition: transform 0.2s ease;
 }
+
+/* 文件树样式 */
+.obsidian-mynb-file-tree {
+    padding: 8px;
+}
+
+.obsidian-mynb-tree-item {
+    display: flex;
+    flex-direction: column;
+    margin: 2px 0;
+}
+
+.obsidian-mynb-tree-item-title {
+    display: flex;
+    align-items: center;
+    padding: 4px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.obsidian-mynb-tree-item-title:hover {
+    background-color: var(--background-secondary);
+}
+
+.obsidian-mynb-tree-item-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.obsidian-mynb-tree-item.folder > .obsidian-mynb-tree-item-title > .obsidian-mynb-tree-item-icon::before {
+    content: "📁";
+}
+
+.obsidian-mynb-tree-item.file > .obsidian-mynb-tree-item-title > .obsidian-mynb-tree-item-icon::before {
+    content: "📄";
+}
+
+.obsidian-mynb-tree-item.folder.collapsed > .obsidian-mynb-tree-item-children {
+    display: none;
+}
+
+.obsidian-mynb-tree-item-children {
+    margin-left: 12px;
+}

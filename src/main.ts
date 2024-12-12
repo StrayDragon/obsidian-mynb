@@ -250,6 +250,42 @@ export default class MyNBPlugin extends Plugin {
 				new CleanEmptyModal(this.app, this).open();
 			}
 		});
+
+		// 修改打开文件浏览器的命令回调
+		this.addCommand({
+			id: 'open-file-explorer',
+			name: '打开文件浏览器',
+			callback: async () => {
+				const { workspace } = this.app;
+
+				// 先尝试获取已存在的文件浏览器视图
+				let leaf = workspace.getLeavesOfType("obsidian-mynb-file-explorer")[0];
+
+				if (!leaf) {
+					// 如果没有找到已存在的视图，创建新的
+					const newLeaf = workspace.getLeftLeaf(false);
+					if (newLeaf) {
+						await newLeaf.setViewState({
+							type: "obsidian-mynb-file-explorer"
+						});
+						leaf = newLeaf;
+					}
+				}
+
+				// 如果成功获取或创建了叶子，则显示它
+				if (leaf) {
+					workspace.revealLeaf(leaf);
+				} else {
+					new Notice('无法创建文件浏览器视图');
+				}
+			}
+		});
+
+		// 注册文件浏览器视图
+		this.registerView(
+			"obsidian-mynb-file-explorer",
+			(leaf) => new FileExplorerView(leaf, this)
+		);
 	}
 
 	onunload() { }
@@ -714,7 +750,7 @@ class HeadingLevelModal extends Modal {
 		const adjustedLines = lines.map(line => {
 			// 只处理已经是标题的行
 			if (line.match(/^#{1,6}\s/)) {
-				// 移除���有的标题标记
+				// 移除所有的标题标记
 				line = line.replace(/^#{1,6}\s/, '');
 
 				// 添加新的标题标记（如果level为0则不添加）
@@ -765,7 +801,7 @@ class CleanEmptyModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		// 创建顶部操作栏容器
+		// 创建顶部操作容器
 		const topBar = contentEl.createEl('div', {
 			cls: 'obsidian-mynb-clean-empty-top-bar'
 		});
@@ -1097,5 +1133,106 @@ class CleanEmptyModal extends Modal {
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
+	}
+}
+
+class FileExplorerView extends ItemView {
+	plugin: MyNBPlugin;
+
+	constructor(leaf: WorkspaceLeaf, plugin: MyNBPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+	}
+
+	getViewType(): string {
+		return "obsidian-mynb-file-explorer";
+	}
+
+	getDisplayText(): string {
+		return "文件浏览器";
+	}
+
+	async onOpen() {
+		await this.refresh();
+	}
+
+	async refresh() {
+		const container = this.containerEl.children[1];
+		container.empty();
+
+		// 创建文件树容器
+		const treeContainer = container.createEl("div", {
+			cls: "obsidian-mynb-file-tree"
+		});
+
+		// 从根目录开始渲染文件树
+		await this.renderTree(this.app.vault.getRoot(), treeContainer, 0);
+	}
+
+	private async renderTree(folder: TFolder, container: HTMLElement, level: number) {
+		// 创建文件夹项
+		const folderEl = container.createEl("div", {
+			cls: "obsidian-mynb-tree-item folder"
+		});
+
+		// 创建文件夹标题行
+		const folderTitle = folderEl.createEl("div", {
+			cls: "obsidian-mynb-tree-item-title"
+		});
+
+		// 添加文件夹图标
+		folderTitle.createEl("span", {
+			cls: "obsidian-mynb-tree-item-icon"
+		});
+
+		// 添加文件夹名称
+		folderTitle.createEl("span", {
+			text: folder.name || "/"
+		});
+
+		// 创建子项容器
+		const childrenContainer = folderEl.createEl("div", {
+			cls: "obsidian-mynb-tree-item-children"
+		});
+
+		// 处理子项
+		for (const child of folder.children) {
+			if (child instanceof TFolder) {
+				await this.renderTree(child, childrenContainer, level + 1);
+			} else if (child instanceof TFile) {
+				this.renderFile(child, childrenContainer, level + 1);
+			}
+		}
+
+		// 添加点击事件处理展开/折叠
+		folderTitle.addEventListener("click", () => {
+			folderEl.toggleClass("collapsed", !folderEl.hasClass("collapsed"));
+		});
+	}
+
+	private renderFile(file: TFile, container: HTMLElement, level: number) {
+		const fileEl = container.createEl("div", {
+			cls: "obsidian-mynb-tree-item file"
+		});
+
+		// 创建文件标题行
+		const fileTitle = fileEl.createEl("div", {
+			cls: "obsidian-mynb-tree-item-title"
+		});
+
+		// 添加文件图标
+		fileTitle.createEl("span", {
+			cls: "obsidian-mynb-tree-item-icon"
+		});
+
+		// 添加文件名称
+		fileTitle.createEl("span", {
+			text: file.name
+		});
+
+		// 添加点击事件以打开文件
+		fileTitle.addEventListener("click", async () => {
+			await this.app.workspace.getLeaf().openFile(file);
+		});
 	}
 }
