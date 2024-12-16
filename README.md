@@ -4,22 +4,27 @@
 
 - 右键文件浏览器
   - 创建文件夹同名笔记
-    - ![image](./docs/assets/add-same-dir-name-note.png)
+    - ![image](./docs/assets/add-same-dir-name-note.webp)
   - 转换为同名文件夹
-    - ![image](./docs/assets/convert-to-same-name-dirnote.png)
+    - ![image](./docs/assets/convert-to-same-name-dirnote.webp)
   - 查询有网络图片的笔记
-    - ![image](./docs/assets/find-network-image-notes.png)
+    - ![image](./docs/assets/find-network-image-notes.webp)
+  - 重构-合并笔记
+    - ![image](./docs/assets/merge-notes.webp)
 - 右键编辑区
   - 调整标题级别
-    - ![image](./docs/assets/adjust-heading-level.png)
+    - ![image](./docs/assets/adjust-heading-level.webp)
   - 选中所在章节
-    - ![image](./docs/assets/select-current-section.png)
+    - ![image](./docs/assets/select-current-section.webp)
 - 命令
   - 文件数统计面板
-  ![image](./docs/assets/open-files-count-statistics-panel.png)
+    - ![image](./docs/assets/open-files-count-statistics-panel.webp)
   - 清理空文件夹
-  ![image](./docs/assets/cleaner-modal.png)
-
+    - ![image](./docs/assets/cleaner-modal.webp)
+  - 查询未引用媒体
+    - ![image](./docs/assets/find-unused-media.webp)
+  - 简易文件浏览器替代 (实验性)
+    - ![image](./docs/assets/replaced-file-browser.webp)
 
 ## 安装
 
