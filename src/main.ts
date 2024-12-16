@@ -174,6 +174,25 @@ export default class MyNBPlugin extends Plugin {
 			})
 		);
 
+		// 功能-右键文件浏览器: 合并笔记
+		this.registerEvent(
+			this.app.workspace.on("files-menu", (menu, files) => {
+				// 过滤出 Markdown 文件
+				const mdFiles = files.filter(file => file instanceof TFile && file.extension === "md") as TFile[];
+
+				if (mdFiles.length > 1) {
+					menu.addItem((item) => {
+						item
+							.setTitle(`重构-合并 ${mdFiles.length} 篇笔记`)
+							.setIcon("files")
+							.onClick(() => {
+								new MergeNotesModal(this.app, this, mdFiles).open();
+							});
+					});
+				}
+			})
+		);
+
 		// 命令-文件数统计面板
 		this.addCommand({
 			id: 'open-files-count-statistics-panel',
@@ -1455,5 +1474,256 @@ class UnreferencedMediaView extends ItemView {
 				});
 			}
 		}
+	}
+}
+
+class MergeNotesModal extends Modal {
+	app: App;
+	plugin: MyNBPlugin;
+	files: TFile[];
+	selectedFrontmatterKeys: Set<string> = new Set();
+	firstNoteFrontmatter: any = {};
+	newNoteName: string;
+	targetPath: string;
+
+	constructor(app: App, plugin: MyNBPlugin, files: TFile[]) {
+		super(app);
+		this.app = app;
+		this.plugin = plugin;
+		this.files = files.sort((a, b) => a.basename.localeCompare(b.basename));
+		this.newNoteName = `${this.files[0].basename}--${this.files[this.files.length - 1].basename}`;
+		this.targetPath = this.files[0].parent?.path || '';
+	}
+
+	async onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl('h2', { text: `合并 ${this.files.length} 篇笔记` });
+
+		// 新笔记名输入
+		const nameContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-merge-name-container' });
+		nameContainer.createEl('label', { text: '新笔记名：' });
+		const nameInput = nameContainer.createEl('input', {
+			type: 'text',
+			value: this.newNoteName
+		});
+		nameInput.addEventListener('change', () => {
+			this.newNoteName = nameInput.value;
+		});
+
+		// 目标路径输入
+		const pathContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-merge-path-container' });
+		pathContainer.createEl('label', { text: '保存位置：' });
+		const pathInput = pathContainer.createEl('input', {
+			type: 'text',
+			value: this.targetPath
+		});
+
+		// 创建自动补全列表
+		const suggestionContainer = pathContainer.createEl('div', {
+			cls: 'obsidian-mynb-merge-path-suggestions'
+		});
+		suggestionContainer.style.display = 'none';
+
+		// 处理路径输入和自动补全
+		pathInput.addEventListener('input', () => {
+			this.targetPath = pathInput.value;
+			this.updatePathSuggestions(suggestionContainer, pathInput);
+		});
+
+		pathInput.addEventListener('focus', () => {
+			this.updatePathSuggestions(suggestionContainer, pathInput);
+			suggestionContainer.style.display = 'block';
+		});
+
+		// 点击外部时隐藏建议列表
+		document.addEventListener('click', (e) => {
+			if (!pathContainer.contains(e.target as Node)) {
+				suggestionContainer.style.display = 'none';
+			}
+		});
+
+		// 读取第一个文件的 frontmatter
+		try {
+			const firstNoteContent = await this.app.vault.read(this.files[0]);
+			const frontmatterMatch = firstNoteContent.match(/^---\n([\s\S]*?)\n---/);
+			if (frontmatterMatch) {
+				this.firstNoteFrontmatter = this.plugin.app.metadataCache.getFileCache(this.files[0])?.frontmatter || {};
+			}
+		} catch (error) {
+			this.plugin.debugLog('Failed to read first note frontmatter:', error);
+		}
+
+		// Frontmatter 选择
+		if (Object.keys(this.firstNoteFrontmatter).length > 0) {
+			const frontmatterContainer = contentEl.createEl('div', {
+				cls: 'obsidian-mynb-merge-frontmatter-container'
+			});
+			frontmatterContainer.createEl('label', { text: '选择需要合并的 frontmatter：' });
+
+			const checkboxContainer = frontmatterContainer.createEl('div', {
+				cls: 'obsidian-mynb-merge-frontmatter-checkboxes'
+			});
+
+			Object.keys(this.firstNoteFrontmatter).forEach(key => {
+				const checkboxWrapper = checkboxContainer.createEl('div', {
+					cls: 'obsidian-mynb-merge-frontmatter-checkbox-wrapper'
+				});
+
+				const checkbox = checkboxWrapper.createEl('input', {
+					type: 'checkbox',
+					attr: { id: `frontmatter-${key}` }
+				});
+
+				checkboxWrapper.createEl('label', {
+					text: key,
+					attr: { for: `frontmatter-${key}` }
+				});
+
+				checkbox.addEventListener('change', () => {
+					if (checkbox.checked) {
+						this.selectedFrontmatterKeys.add(key);
+					} else {
+						this.selectedFrontmatterKeys.delete(key);
+					}
+				});
+			});
+		}
+
+		// 按钮容器
+		const buttonContainer = contentEl.createEl('div', {
+			cls: 'obsidian-mynb-merge-button-container'
+		});
+
+		// 确定按钮
+		const confirmButton = buttonContainer.createEl('button', {
+			text: '确定',
+			cls: 'mod-cta'
+		});
+		confirmButton.addEventListener('click', async () => {
+			await this.mergeNotes();
+		});
+
+		// 取消按钮
+		const cancelButton = buttonContainer.createEl('button', {
+			text: '取消'
+		});
+		cancelButton.addEventListener('click', () => {
+			this.close();
+		});
+	}
+
+	private async updatePathSuggestions(container: HTMLElement, input: HTMLInputElement) {
+		container.empty();
+		const inputValue = input.value.toLowerCase();
+
+		// 获取所有文件夹
+		const folders = new Set<string>();
+		this.app.vault.getAllLoadedFiles().forEach(file => {
+			if (file instanceof TFolder) {
+				folders.add(file.path);
+			} else if (file.parent) {
+				folders.add(file.parent.path);
+			}
+		});
+
+		// 过滤并显示匹配的建议
+		const matchingFolders = Array.from(folders)
+			.filter(path => path.toLowerCase().includes(inputValue))
+			.slice(0, 5); // 限制显示数量
+
+		if (matchingFolders.length > 0) {
+			container.style.display = 'block';
+			matchingFolders.forEach(path => {
+				const suggestion = container.createEl('div', {
+					cls: 'obsidian-mynb-merge-path-suggestion',
+					text: path
+				});
+				suggestion.addEventListener('click', () => {
+					input.value = path;
+					this.targetPath = path;
+					container.style.display = 'none';
+				});
+			});
+		} else {
+			container.style.display = 'none';
+		}
+	}
+
+	private async mergeNotes() {
+		try {
+			// 检查目标文件是否已存在
+			const newFilePath = `${this.targetPath}/${this.newNoteName}.md`;
+			if (this.app.vault.getAbstractFileByPath(newFilePath)) {
+				new Notice('目标文件已存在');
+				return;
+			}
+
+			// 确保目标文件夹存在
+			if (this.targetPath && !this.app.vault.getAbstractFileByPath(this.targetPath)) {
+				await this.app.vault.createFolder(this.targetPath);
+			}
+
+			// 准备合并的内容
+			let mergedContent = '';
+
+			// 处理 frontmatter
+			if (Object.keys(this.firstNoteFrontmatter).length > 0) {
+				const mergedFrontmatter: any = {};
+
+				// 复制第一个文件的所有 frontmatter
+				Object.keys(this.firstNoteFrontmatter).forEach(key => {
+					if (!this.selectedFrontmatterKeys.has(key)) {
+						mergedFrontmatter[key] = this.firstNoteFrontmatter[key];
+					}
+				});
+
+				// 处理选中的需要合并的 frontmatter
+				for (const key of this.selectedFrontmatterKeys) {
+					const values = new Set<any>();
+					for (const file of this.files) {
+						const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+						if (frontmatter && frontmatter[key] !== undefined) {
+							if (Array.isArray(frontmatter[key])) {
+								frontmatter[key].forEach((v: any) => values.add(v));
+							} else {
+								values.add(frontmatter[key]);
+							}
+						}
+					}
+					mergedFrontmatter[key] = Array.from(values);
+				}
+
+				// 添加 frontmatter 到内容
+				mergedContent += '---\n';
+				Object.entries(mergedFrontmatter).forEach(([key, value]) => {
+					mergedContent += `${key}: ${JSON.stringify(value)}\n`;
+				});
+				mergedContent += '---\n\n';
+			}
+
+			// 合并文件内容
+			for (const file of this.files) {
+				const content = await this.app.vault.read(file);
+				// 移除 frontmatter
+				const contentWithoutFrontmatter = content.replace(/^---\n[\s\S]*?\n---\n/, '');
+				mergedContent += `# ${file.basename}\n\n${contentWithoutFrontmatter}\n\n`;
+			}
+
+			// 创建新文件
+			await this.app.vault.create(newFilePath, mergedContent);
+			new Notice(`成功合并 ${this.files.length} 篇笔记`);
+			this.close();
+
+		} catch (error) {
+			new Notice(`合并失败: ${error.message}`);
+			this.plugin.debugLog('Merge notes failed:', error);
+		}
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }
