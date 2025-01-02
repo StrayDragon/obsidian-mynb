@@ -1,4 +1,6 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Modal, ItemView, WorkspaceLeaf, Editor } from 'obsidian';
+import * as path from 'path';
+import * as fs from 'fs';
 
 const PLUGIN_NAME: string = "MyNBPlugin";
 
@@ -149,6 +151,16 @@ export default class MyNBPlugin extends Plugin {
 								} catch (error) {
 									new Notice(`转换失败: ${error.message}`);
 								}
+							});
+					});
+
+					// 功能-右键文件浏览器: 导出为 Hugo post
+					menu.addItem((item) => {
+						item
+							.setTitle("导出为 Hugo post")
+							.setIcon("file-output")
+							.onClick(() => {
+								new ExportToHugoModal(this.app, this, file).open();
 							});
 					});
 				}
@@ -1725,5 +1737,251 @@ class MergeNotesModal extends Modal {
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
+	}
+}
+
+class ExportToHugoModal extends Modal {
+	sourcePath: string;
+	targetPath: string;
+	newName: string;
+	oldName: string;
+	plugin: MyNBPlugin;
+	file: TFile;
+
+	constructor(app: App, plugin: MyNBPlugin, file: TFile) {
+		super(app);
+		this.plugin = plugin;
+		this.file = file;
+		this.sourcePath = file.path;
+		this.targetPath = '';
+		this.newName = file.basename;
+		this.oldName = file.basename;
+	}
+
+	async onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl('h2', { text: '导出为 Hugo post' });
+
+		// 笔记来源
+		const sourceContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-container' });
+		sourceContainer.createEl('label', { text: '笔记来源：' });
+		sourceContainer.createEl('input', {
+			type: 'text',
+			value: this.sourcePath,
+			attr: { readonly: true }
+		});
+
+		// 输出目录
+		const targetContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-container' });
+		targetContainer.createEl('label', { text: '输出目录：' });
+
+		// 创建输入框和按钮的容器
+		const targetInputContainer = targetContainer.createEl('div', {
+			cls: 'obsidian-mynb-hugo-export-input-container'
+		});
+
+		const targetInput = targetInputContainer.createEl('input', {
+			type: 'text',
+			value: this.targetPath,
+			placeholder: '输入路径或点击选择目录'
+		});
+		targetInput.addEventListener('change', () => {
+			this.targetPath = targetInput.value;
+		});
+
+		// 添加选择目录按钮
+		const selectDirButton = targetInputContainer.createEl('button', {
+			text: '选择目录',
+			cls: 'obsidian-mynb-hugo-export-select-dir'
+		});
+		selectDirButton.addEventListener('click', async () => {
+			// 使用 electron 的 dialog API 选择目录
+			// @ts-ignore
+			const result = await window.electron.remote.dialog.showOpenDialog({
+				properties: ['openDirectory']
+			});
+
+			if (!result.canceled && result.filePaths.length > 0) {
+				this.targetPath = result.filePaths[0];
+				targetInput.value = this.targetPath;
+			}
+		});
+
+		// 输出重命名
+		const nameContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-container' });
+		nameContainer.createEl('label', { text: '输出重命名：' });
+		const nameInput = nameContainer.createEl('input', {
+			type: 'text',
+			value: this.newName
+		});
+		nameInput.addEventListener('change', () => {
+			this.newName = nameInput.value;
+		});
+
+		// 按钮容器
+		const buttonContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-buttons' });
+
+		// 确定按钮
+		const confirmButton = buttonContainer.createEl('button', {
+			text: '确定',
+			cls: 'mod-cta'
+		});
+		confirmButton.addEventListener('click', async () => {
+			if (!this.targetPath) {
+				new Notice('请指定输出目录');
+				return;
+			}
+			await this.exportToHugo();
+			this.close();
+		});
+
+		// 取消按钮
+		const cancelButton = buttonContainer.createEl('button', {
+			text: '取消'
+		});
+		cancelButton.addEventListener('click', () => {
+			this.close();
+		});
+	}
+
+	async exportToHugo() {
+		try {
+			// 读取源文件内容
+			const content = await this.app.vault.read(this.file);
+
+			// 确定实际的输出路径
+			let actualTargetPath = this.targetPath;
+			if (!path.isAbsolute(actualTargetPath)) {
+				// 如果是相对路径，则相对于当前工作目录
+				actualTargetPath = path.join(process.cwd(), actualTargetPath);
+			}
+
+			// 创建输出目录（如果不存在）
+			if (!fs.existsSync(actualTargetPath)) {
+				fs.mkdirSync(actualTargetPath, { recursive: true });
+			}
+
+			// 创建媒体文件夹
+			const mediaDir = path.join(actualTargetPath, this.newName);
+			fs.mkdirSync(mediaDir, { recursive: true });
+
+			// 处理内容
+			const processedContent = await this.processContent(content, mediaDir);
+
+			// 创建输出文件（与媒体文件夹同级）
+			const outputPath = path.join(actualTargetPath, `${this.newName}.md`);
+			fs.writeFileSync(outputPath, processedContent, 'utf8');
+
+			new Notice('导出成功');
+		} catch (error) {
+			new Notice(`导出失败: ${error.message}`);
+			console.error('Export failed:', error);
+		}
+	}
+
+	private async processContent(content: string, mediaDir: string): Promise<string> {
+		// 移除原有的 YAML 头
+		let processedContent = content.replace(/^---\n[\s\S]*?\n---\n/, '');
+
+		// 收集所有链接和图片
+		const markdownLinks = Array.from(processedContent.matchAll(/\[([^\]]*)\]\(([^)]+)\)/g));
+		const wikiLinks = Array.from(processedContent.matchAll(/\[\[([^\]]+)\]\]/g));
+		const imageLinks = Array.from(processedContent.matchAll(/!\[([^\]]*)\]\(([^)]+)\)/g));
+
+		// 处理 Markdown 链接
+		for (const match of markdownLinks) {
+			const [fullMatch, text, link] = match;
+			if (!link.startsWith('http')) {
+				const linkedFile = this.app.metadataCache.getFirstLinkpathDest(link, this.sourcePath);
+				if (linkedFile) {
+					if (this.isMediaFile(linkedFile)) {
+						// 如果是媒体文件，复制到媒体目录并使用相对路径
+						await this.copyMediaFile(linkedFile, mediaDir);
+						processedContent = processedContent.replace(
+							fullMatch,
+							`[${text}](./${linkedFile.name})`
+						);
+					} else {
+						const relativeLink = this.getRelativeVaultPath(linkedFile.path);
+						processedContent = processedContent.replace(
+							fullMatch,
+							`[${text}](${relativeLink})`
+						);
+					}
+				}
+			}
+		}
+
+		// 处理 Wiki 链接
+		for (const match of wikiLinks) {
+			const [fullMatch, link] = match;
+			const [fileName, alias] = link.split('|');
+			const linkedFile = this.app.metadataCache.getFirstLinkpathDest(fileName, this.sourcePath);
+			if (linkedFile) {
+				if (this.isMediaFile(linkedFile)) {
+					// 如果是媒体文件，复制到媒体目录并使用相对路径
+					await this.copyMediaFile(linkedFile, mediaDir);
+					processedContent = processedContent.replace(
+						fullMatch,
+						`![${alias || ''}](./${linkedFile.name})`
+					);
+				} else {
+					const relativeLink = this.getRelativeVaultPath(linkedFile.path);
+					processedContent = processedContent.replace(
+						fullMatch,
+						`[${alias || fileName}](${relativeLink})`
+					);
+				}
+			}
+		}
+
+		// 处理图片
+		for (const match of imageLinks) {
+			const [fullMatch, alt, link] = match;
+			if (!link.startsWith('http')) {
+				const imageFile = this.app.metadataCache.getFirstLinkpathDest(link, this.sourcePath);
+				if (imageFile) {
+					// 复制图片到媒体目录
+					await this.copyMediaFile(imageFile, mediaDir);
+					// 更新图片链接为相对路径
+					processedContent = processedContent.replace(
+						fullMatch,
+						`![${alt}](./${imageFile.name})`
+					);
+				}
+			}
+		}
+
+		// 添加 Hugo 的 YAML 头
+		const hugoFrontmatter = `---
+title: "${this.oldName}"
+date: ${new Date().toISOString()}
+draft: false
+---
+
+`;
+
+		return hugoFrontmatter + processedContent;
+	}
+
+	private async copyMediaFile(file: TFile, mediaDir: string) {
+		const content = await this.app.vault.readBinary(file);
+		const targetPath = path.join(mediaDir, file.name);
+		fs.writeFileSync(targetPath, Buffer.from(content));
+	}
+
+	private getRelativeVaultPath(targetPath: string): string {
+		// 移除开头的斜杠（如果有）
+		if (targetPath.startsWith('/')) {
+			targetPath = targetPath.slice(1);
+		}
+		return targetPath;
+	}
+
+	private isMediaFile(file: TFile): boolean {
+		const mediaExtensions = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'mp4', 'webm', 'ogv', 'mov'];
+		return mediaExtensions.includes(file.extension.toLowerCase());
 	}
 }

@@ -496,3 +496,67 @@ If your plugin does not need CSS, delete this file.
     background-color: var(--interactive-accent);
     color: var(--text-on-accent);
 }
+
+/* Hugo Export Modal Styles */
+.obsidian-mynb-hugo-export-container {
+	margin-bottom: 1rem;
+}
+
+.obsidian-mynb-hugo-export-container label {
+	display: block;
+	margin-bottom: 0.5rem;
+	font-weight: 500;
+}
+
+.obsidian-mynb-hugo-export-input-container {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.obsidian-mynb-hugo-export-container input {
+	flex: 1;
+	padding: 0.5rem;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background-color: var(--background-primary);
+}
+
+.obsidian-mynb-hugo-export-container input[readonly] {
+	background-color: var(--background-secondary);
+	cursor: not-allowed;
+}
+
+.obsidian-mynb-hugo-export-select-dir {
+	padding: 0.5rem 1rem;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-radius: 4px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.obsidian-mynb-hugo-export-select-dir:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+.obsidian-mynb-hugo-export-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	margin-top: 2rem;
+}
+
+.obsidian-mynb-hugo-export-buttons button {
+	padding: 0.5rem 1rem;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.obsidian-mynb-hugo-export-buttons button:not(.mod-cta) {
+	background-color: var(--background-modifier-border);
+	color: var(--text-normal);
+}
+
+.obsidian-mynb-hugo-export-buttons button:not(.mod-cta):hover {
+	background-color: var(--background-modifier-border-hover);
+}
