@@ -1527,86 +1527,41 @@ class MergeNotesModal extends Modal {
 		// 目标路径输入
 		const pathContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-merge-path-container' });
 		pathContainer.createEl('label', { text: '保存位置：' });
-		const pathInput = pathContainer.createEl('input', {
+
+		// 创建输入框和按钮的容器
+		const targetInputContainer = pathContainer.createEl('div', {
+			cls: 'obsidian-mynb-merge-path-input-container'
+		});
+
+		const targetInput = targetInputContainer.createEl('input', {
 			type: 'text',
-			value: this.targetPath
+			value: this.targetPath,
+			placeholder: '输入路径或点击选择目录'
+		});
+		targetInput.addEventListener('change', () => {
+			this.targetPath = targetInput.value;
 		});
 
-		// 创建自动补全列表
-		const suggestionContainer = pathContainer.createEl('div', {
-			cls: 'obsidian-mynb-merge-path-suggestions'
+		// 添加选择目录按钮
+		const selectDirButton = targetInputContainer.createEl('button', {
+			text: '选择目录',
+			cls: 'obsidian-mynb-merge-path-select-dir'
 		});
-		suggestionContainer.style.display = 'none';
+		selectDirButton.addEventListener('click', async () => {
+			// 使用 electron 的 dialog API 选择目录
+			// @ts-ignore
+			const result = await window.electron.remote.dialog.showOpenDialog({
+				properties: ['openDirectory']
+			});
 
-		// 处理路径输入和自动补全
-		pathInput.addEventListener('input', () => {
-			this.targetPath = pathInput.value;
-			this.updatePathSuggestions(suggestionContainer, pathInput);
-		});
-
-		pathInput.addEventListener('focus', () => {
-			this.updatePathSuggestions(suggestionContainer, pathInput);
-			suggestionContainer.style.display = 'block';
-		});
-
-		// 点击外部时隐藏建议列表
-		document.addEventListener('click', (e) => {
-			if (!pathContainer.contains(e.target as Node)) {
-				suggestionContainer.style.display = 'none';
+			if (!result.canceled && result.filePaths.length > 0) {
+				this.targetPath = result.filePaths[0];
+				targetInput.value = this.targetPath;
 			}
 		});
-
-		// 读取第一个文件的 frontmatter
-		try {
-			const firstNoteContent = await this.app.vault.read(this.files[0]);
-			const frontmatterMatch = firstNoteContent.match(/^---\n([\s\S]*?)\n---/);
-			if (frontmatterMatch) {
-				this.firstNoteFrontmatter = this.plugin.app.metadataCache.getFileCache(this.files[0])?.frontmatter || {};
-			}
-		} catch (error) {
-			this.plugin.debugLog('Failed to read first note frontmatter:', error);
-		}
-
-		// Frontmatter 选择
-		if (Object.keys(this.firstNoteFrontmatter).length > 0) {
-			const frontmatterContainer = contentEl.createEl('div', {
-				cls: 'obsidian-mynb-merge-frontmatter-container'
-			});
-			frontmatterContainer.createEl('label', { text: '选择需要合并的 frontmatter：' });
-
-			const checkboxContainer = frontmatterContainer.createEl('div', {
-				cls: 'obsidian-mynb-merge-frontmatter-checkboxes'
-			});
-
-			Object.keys(this.firstNoteFrontmatter).forEach(key => {
-				const checkboxWrapper = checkboxContainer.createEl('div', {
-					cls: 'obsidian-mynb-merge-frontmatter-checkbox-wrapper'
-				});
-
-				const checkbox = checkboxWrapper.createEl('input', {
-					type: 'checkbox',
-					attr: { id: `frontmatter-${key}` }
-				});
-
-				checkboxWrapper.createEl('label', {
-					text: key,
-					attr: { for: `frontmatter-${key}` }
-				});
-
-				checkbox.addEventListener('change', () => {
-					if (checkbox.checked) {
-						this.selectedFrontmatterKeys.add(key);
-					} else {
-						this.selectedFrontmatterKeys.delete(key);
-					}
-				});
-			});
-		}
 
 		// 按钮容器
-		const buttonContainer = contentEl.createEl('div', {
-			cls: 'obsidian-mynb-merge-button-container'
-		});
+		const buttonContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-merge-buttons' });
 
 		// 确定按钮
 		const confirmButton = buttonContainer.createEl('button', {
@@ -1614,7 +1569,12 @@ class MergeNotesModal extends Modal {
 			cls: 'mod-cta'
 		});
 		confirmButton.addEventListener('click', async () => {
+			if (!this.targetPath) {
+				new Notice('请指定输出目录');
+				return;
+			}
 			await this.mergeNotes();
+			this.close();
 		});
 
 		// 取消按钮
@@ -1624,43 +1584,6 @@ class MergeNotesModal extends Modal {
 		cancelButton.addEventListener('click', () => {
 			this.close();
 		});
-	}
-
-	private async updatePathSuggestions(container: HTMLElement, input: HTMLInputElement) {
-		container.empty();
-		const inputValue = input.value.toLowerCase();
-
-		// 获取所有文件夹
-		const folders = new Set<string>();
-		this.app.vault.getAllLoadedFiles().forEach(file => {
-			if (file instanceof TFolder) {
-				folders.add(file.path);
-			} else if (file.parent) {
-				folders.add(file.parent.path);
-			}
-		});
-
-		// 过滤并显示匹配的建议
-		const matchingFolders = Array.from(folders)
-			.filter(path => path.toLowerCase().includes(inputValue))
-			.slice(0, 5); // 限制显示数量
-
-		if (matchingFolders.length > 0) {
-			container.style.display = 'block';
-			matchingFolders.forEach(path => {
-				const suggestion = container.createEl('div', {
-					cls: 'obsidian-mynb-merge-path-suggestion',
-					text: path
-				});
-				suggestion.addEventListener('click', () => {
-					input.value = path;
-					this.targetPath = path;
-					container.style.display = 'none';
-				});
-			});
-		} else {
-			container.style.display = 'none';
-		}
 	}
 
 	private async mergeNotes() {
@@ -1756,6 +1679,7 @@ class ExportToHugoModal extends Modal {
 		this.targetPath = '';
 		this.newName = file.basename;
 		this.oldName = file.basename;
+		this.containerEl.addClass('obsidian-mynb-hugo-export-modal');
 	}
 
 	async onOpen() {
@@ -1811,7 +1735,7 @@ class ExportToHugoModal extends Modal {
 
 		// 输出重命名
 		const nameContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-container' });
-		nameContainer.createEl('label', { text: '输出重命名：' });
+		nameContainer.createEl('label', { text: '输出重命名(不需要.md)：' });
 		const nameInput = nameContainer.createEl('input', {
 			type: 'text',
 			value: this.newName

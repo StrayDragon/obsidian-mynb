@@ -499,18 +499,22 @@ If your plugin does not need CSS, delete this file.
 
 /* Hugo Export Modal Styles */
 .obsidian-mynb-hugo-export-container {
-	margin-bottom: 1rem;
+	margin-bottom: 1.5rem;
+	width: 100%;
 }
 
 .obsidian-mynb-hugo-export-container label {
 	display: block;
 	margin-bottom: 0.5rem;
 	font-weight: 500;
+	color: var(--text-normal);
 }
 
 .obsidian-mynb-hugo-export-input-container {
 	display: flex;
 	gap: 0.5rem;
+	width: 100%;
+	min-width: 400px;
 }
 
 .obsidian-mynb-hugo-export-container input {
@@ -519,11 +523,21 @@ If your plugin does not need CSS, delete this file.
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 4px;
 	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 14px;
+	min-width: 0; /* 防止 flex 子元素溢出 */
+}
+
+.obsidian-mynb-hugo-export-container input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+	box-shadow: 0 0 0 2px var(--background-modifier-border-hover);
 }
 
 .obsidian-mynb-hugo-export-container input[readonly] {
 	background-color: var(--background-secondary);
 	cursor: not-allowed;
+	color: var(--text-muted);
 }
 
 .obsidian-mynb-hugo-export-select-dir {
@@ -533,6 +547,9 @@ If your plugin does not need CSS, delete this file.
 	border-radius: 4px;
 	cursor: pointer;
 	white-space: nowrap;
+	font-size: 14px;
+	border: none;
+	transition: background-color 0.2s ease;
 }
 
 .obsidian-mynb-hugo-export-select-dir:hover {
@@ -542,14 +559,28 @@ If your plugin does not need CSS, delete this file.
 .obsidian-mynb-hugo-export-buttons {
 	display: flex;
 	justify-content: flex-end;
-	gap: 0.5rem;
+	gap: 0.8rem;
 	margin-top: 2rem;
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 1rem;
 }
 
 .obsidian-mynb-hugo-export-buttons button {
-	padding: 0.5rem 1rem;
+	padding: 0.6rem 1.2rem;
 	border-radius: 4px;
 	cursor: pointer;
+	font-size: 14px;
+	border: none;
+	transition: all 0.2s ease;
+}
+
+.obsidian-mynb-hugo-export-buttons button.mod-cta {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.obsidian-mynb-hugo-export-buttons button.mod-cta:hover {
+	background-color: var(--interactive-accent-hover);
 }
 
 .obsidian-mynb-hugo-export-buttons button:not(.mod-cta) {
@@ -558,5 +589,111 @@ If your plugin does not need CSS, delete this file.
 }
 
 .obsidian-mynb-hugo-export-buttons button:not(.mod-cta):hover {
+	background-color: var(--background-modifier-border-hover);
+}
+
+.obsidian-mynb-hugo-export-modal .modal-content {
+	padding: 1.5rem;
+}
+
+.obsidian-mynb-hugo-export-modal h2 {
+	margin: 0 0 1.5rem 0;
+	padding-bottom: 1rem;
+	border-bottom: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+	font-size: 1.5rem;
+	font-weight: 600;
+}
+
+/* Merge Notes Modal Styles */
+.obsidian-mynb-merge-name-container,
+.obsidian-mynb-merge-path-container {
+	margin-bottom: 1.5rem;
+	width: 100%;
+}
+
+.obsidian-mynb-merge-name-container label,
+.obsidian-mynb-merge-path-container label {
+	display: block;
+	margin-bottom: 0.5rem;
+	font-weight: 500;
+	color: var(--text-normal);
+}
+
+.obsidian-mynb-merge-path-input-container {
+	display: flex;
+	gap: 0.5rem;
+	width: 100%;
+	min-width: 400px;
+}
+
+.obsidian-mynb-merge-name-container input,
+.obsidian-mynb-merge-path-container input {
+	flex: 1;
+	padding: 0.5rem;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 14px;
+	min-width: 0;
+}
+
+.obsidian-mynb-merge-name-container input:focus,
+.obsidian-mynb-merge-path-container input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+	box-shadow: 0 0 0 2px var(--background-modifier-border-hover);
+}
+
+.obsidian-mynb-merge-path-select-dir {
+	padding: 0.5rem 1rem;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-radius: 4px;
+	cursor: pointer;
+	white-space: nowrap;
+	font-size: 14px;
+	border: none;
+	transition: background-color 0.2s ease;
+}
+
+.obsidian-mynb-merge-path-select-dir:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+.obsidian-mynb-merge-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.8rem;
+	margin-top: 2rem;
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 1rem;
+}
+
+.obsidian-mynb-merge-buttons button {
+	padding: 0.6rem 1.2rem;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 14px;
+	border: none;
+	transition: all 0.2s ease;
+}
+
+.obsidian-mynb-merge-buttons button.mod-cta {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.obsidian-mynb-merge-buttons button.mod-cta:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+.obsidian-mynb-merge-buttons button:not(.mod-cta) {
+	background-color: var(--background-modifier-border);
+	color: var(--text-normal);
+}
+
+.obsidian-mynb-merge-buttons button:not(.mod-cta):hover {
 	background-color: var(--background-modifier-border-hover);
 }
