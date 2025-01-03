@@ -1,6 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Modal, ItemView, WorkspaceLeaf, Editor } from 'obsidian';
-import * as path from 'path';
-import * as fs from 'fs';
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Modal, ItemView, WorkspaceLeaf, Editor, Platform } from 'obsidian';
 
 const PLUGIN_NAME: string = "MyNBPlugin";
 
@@ -154,15 +152,17 @@ export default class MyNBPlugin extends Plugin {
 							});
 					});
 
-					// 功能-右键文件浏览器: 导出为 Hugo post
-					menu.addItem((item) => {
-						item
-							.setTitle("导出为 Hugo post")
-							.setIcon("file-output")
-							.onClick(() => {
-								new ExportToHugoModal(this.app, this, file).open();
-							});
-					});
+					// (桌面端) 功能-右键文件浏览器: 导出为 Hugo post
+					if (Platform.isDesktopApp) {
+						menu.addItem((item) => {
+							item
+								.setTitle("导出为 Hugo post")
+								.setIcon("file-output")
+								.onClick(() => {
+									new ExportToHugoModal(this.app, this, file).open();
+								});
+						});
+					}
 				}
 
 				// 功能-右键文件浏览器: 查询有网络图片的笔记
@@ -724,8 +724,8 @@ class FilesCountStatisticsModal extends Modal {
 				// 找到当前文件夹的下一个同级元素（如果有的话）
 				let nextSiblingEl = folderEl.nextElementSibling;
 				while (nextSiblingEl &&
-					   nextSiblingEl.classList.contains('obsidian-mynb-folder') &&
-					   (nextSiblingEl as HTMLElement).style.paddingLeft > folderEl.style.paddingLeft) {
+					nextSiblingEl.classList.contains('obsidian-mynb-folder') &&
+					(nextSiblingEl as HTMLElement).style.paddingLeft > folderEl.style.paddingLeft) {
 					nextSiblingEl = nextSiblingEl.nextElementSibling;
 				}
 
@@ -1666,10 +1666,12 @@ class MergeNotesModal extends Modal {
 class ExportToHugoModal extends Modal {
 	sourcePath: string;
 	targetPath: string;
-	newName: string;
-	oldName: string;
+	newFileName: string;
+	originName: string;
 	plugin: MyNBPlugin;
 	file: TFile;
+	_path: any;
+	_fs: any;
 
 	constructor(app: App, plugin: MyNBPlugin, file: TFile) {
 		super(app);
@@ -1677,9 +1679,11 @@ class ExportToHugoModal extends Modal {
 		this.file = file;
 		this.sourcePath = file.path;
 		this.targetPath = '';
-		this.newName = file.basename;
-		this.oldName = file.basename;
+		this.newFileName = file.basename;
+		this.originName = file.basename;
 		this.containerEl.addClass('obsidian-mynb-hugo-export-modal');
+		this._path = require("path");
+		this._fs = require("fs");
 	}
 
 	async onOpen() {
@@ -1688,7 +1692,6 @@ class ExportToHugoModal extends Modal {
 
 		contentEl.createEl('h2', { text: '导出为 Hugo post' });
 
-		// 笔记来源
 		const sourceContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-container' });
 		sourceContainer.createEl('label', { text: '笔记来源：' });
 		sourceContainer.createEl('input', {
@@ -1697,11 +1700,9 @@ class ExportToHugoModal extends Modal {
 			attr: { readonly: true }
 		});
 
-		// 输出目录
 		const targetContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-container' });
 		targetContainer.createEl('label', { text: '输出目录：' });
 
-		// 创建输入框和按钮的容器
 		const targetInputContainer = targetContainer.createEl('div', {
 			cls: 'obsidian-mynb-hugo-export-input-container'
 		});
@@ -1715,13 +1716,11 @@ class ExportToHugoModal extends Modal {
 			this.targetPath = targetInput.value;
 		});
 
-		// 添加选择目录按钮
 		const selectDirButton = targetInputContainer.createEl('button', {
 			text: '选择目录',
 			cls: 'obsidian-mynb-hugo-export-select-dir'
 		});
 		selectDirButton.addEventListener('click', async () => {
-			// 使用 electron 的 dialog API 选择目录
 			// @ts-ignore
 			const result = await window.electron.remote.dialog.showOpenDialog({
 				properties: ['openDirectory']
@@ -1733,21 +1732,18 @@ class ExportToHugoModal extends Modal {
 			}
 		});
 
-		// 输出重命名
 		const nameContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-container' });
 		nameContainer.createEl('label', { text: '输出重命名(不需要.md)：' });
 		const nameInput = nameContainer.createEl('input', {
 			type: 'text',
-			value: this.newName
+			value: this.newFileName
 		});
 		nameInput.addEventListener('change', () => {
-			this.newName = nameInput.value;
+			this.newFileName = nameInput.value;
 		});
 
-		// 按钮容器
 		const buttonContainer = contentEl.createEl('div', { cls: 'obsidian-mynb-hugo-export-buttons' });
 
-		// 确定按钮
 		const confirmButton = buttonContainer.createEl('button', {
 			text: '确定',
 			cls: 'mod-cta'
@@ -1761,7 +1757,6 @@ class ExportToHugoModal extends Modal {
 			this.close();
 		});
 
-		// 取消按钮
 		const cancelButton = buttonContainer.createEl('button', {
 			text: '取消'
 		});
@@ -1772,49 +1767,39 @@ class ExportToHugoModal extends Modal {
 
 	async exportToHugo() {
 		try {
-			// 读取源文件内容
 			const content = await this.app.vault.read(this.file);
 
-			// 确定实际的输出路径
 			let actualTargetPath = this.targetPath;
-			if (!path.isAbsolute(actualTargetPath)) {
-				// 如果是相对路径，则相对于当前工作目录
-				actualTargetPath = path.join(process.cwd(), actualTargetPath);
+			if (!this._path.isAbsolute(actualTargetPath)) {
+				actualTargetPath = this._path.join(process.cwd(), actualTargetPath);
 			}
 
-			// 创建输出目录（如果不存在）
-			if (!fs.existsSync(actualTargetPath)) {
-				fs.mkdirSync(actualTargetPath, { recursive: true });
+			if (!this._fs.existsSync(actualTargetPath)) {
+				this._fs.mkdirSync(actualTargetPath, { recursive: true });
 			}
 
-			// 创建媒体文件夹
-			const mediaDir = path.join(actualTargetPath, this.newName);
-			fs.mkdirSync(mediaDir, { recursive: true });
+			const mediaDir = this._path.join(actualTargetPath, this.newFileName);
+			this._fs.mkdirSync(mediaDir, { recursive: true });
 
-			// 处理内容
 			const processedContent = await this.processContent(content, mediaDir);
 
-			// 创建输出文件（与媒体文件夹同级）
-			const outputPath = path.join(actualTargetPath, `${this.newName}.md`);
-			fs.writeFileSync(outputPath, processedContent, 'utf8');
+			const outputPath = this._path.join(actualTargetPath, `${this.newFileName}.md`);
+			this._fs.writeFileSync(outputPath, processedContent, 'utf8');
 
 			new Notice('导出成功');
 		} catch (error) {
 			new Notice(`导出失败: ${error.message}`);
-			console.error('Export failed:', error);
+			this.plugin.debugLog("Export failed:", error);
 		}
 	}
 
 	private async processContent(content: string, mediaDir: string): Promise<string> {
-		// 移除原有的 YAML 头
 		let processedContent = content.replace(/^---\n[\s\S]*?\n---\n/, '');
 
-		// 收集所有链接和图片
 		const markdownLinks = Array.from(processedContent.matchAll(/\[([^\]]*)\]\(([^)]+)\)/g));
 		const wikiLinks = Array.from(processedContent.matchAll(/\[\[([^\]]+)\]\]/g));
 		const imageLinks = Array.from(processedContent.matchAll(/!\[([^\]]*)\]\(([^)]+)\)/g));
 
-		// 处理 Markdown 链接
 		for (const match of markdownLinks) {
 			const [fullMatch, text, link] = match;
 			if (!link.startsWith('http')) {
@@ -1838,14 +1823,12 @@ class ExportToHugoModal extends Modal {
 			}
 		}
 
-		// 处理 Wiki 链接
 		for (const match of wikiLinks) {
 			const [fullMatch, link] = match;
 			const [fileName, alias] = link.split('|');
 			const linkedFile = this.app.metadataCache.getFirstLinkpathDest(fileName, this.sourcePath);
 			if (linkedFile) {
-				if (this.isMediaFile(linkedFile)) {
-					// 如果是媒体文件，复制到媒体目录并使用相对路径
+				if (this.isMediaFile(linkedFile)) { // 如果是媒体文件，复制到媒体目录并使用相对路径
 					await this.copyMediaFile(linkedFile, mediaDir);
 					processedContent = processedContent.replace(
 						fullMatch,
@@ -1861,7 +1844,6 @@ class ExportToHugoModal extends Modal {
 			}
 		}
 
-		// 处理图片
 		for (const match of imageLinks) {
 			const [fullMatch, alt, link] = match;
 			if (!link.startsWith('http')) {
@@ -1878,9 +1860,8 @@ class ExportToHugoModal extends Modal {
 			}
 		}
 
-		// 添加 Hugo 的 YAML 头
 		const hugoFrontmatter = `---
-title: "${this.oldName}"
+title: "${this.originName}"
 date: ${new Date().toISOString()}
 draft: false
 ---
@@ -1892,8 +1873,8 @@ draft: false
 
 	private async copyMediaFile(file: TFile, mediaDir: string) {
 		const content = await this.app.vault.readBinary(file);
-		const targetPath = path.join(mediaDir, file.name);
-		fs.writeFileSync(targetPath, Buffer.from(content));
+		const targetPath = this._path.join(mediaDir, file.name);
+		this._fs.writeFileSync(targetPath, Buffer.from(content));
 	}
 
 	private getRelativeVaultPath(targetPath: string): string {
