@@ -487,7 +487,7 @@ export default class MyNBPlugin extends Plugin {
 			if (file.extension === 'md') {
 				const content = await this.app.vault.read(file);
 
-				// 匹配 Markdown 图片语法
+				// 匹配标准 Markdown 图片语法
 				const mdImageRegex = /!\[.*?\]\((.*?)\)/g;
 				let match;
 				while ((match = mdImageRegex.exec(content)) !== null) {
@@ -497,10 +497,21 @@ export default class MyNBPlugin extends Plugin {
 					}
 				}
 
-				// 匹配 Wiki 链接语法
-				const wikiLinkRegex = /!\[\[(.*?)\]\]/g;
+				// 匹配 Wiki 链接语法 - 包括 ![[file]] 和 ![[file|alias]] 格式
+				const wikiLinkRegex = /!\[\[(.*?)(?:\|.*?)?\]\]/g;
 				while ((match = wikiLinkRegex.exec(content)) !== null) {
-					const path = match[1].split('|')[0].split('#')[0]; // 移除别名和锚点
+					const path = match[1].split('#')[0].split('|')[0].trim(); // 移除锚点和别名
+					// 尝试在 vault 中解析完整路径
+					const resolvedPath = this.app.metadataCache.getFirstLinkpathDest(path, file.path)?.path;
+					if (resolvedPath && mediaFiles.has(resolvedPath)) {
+						referencedFiles.add(resolvedPath);
+					}
+				}
+
+				// 匹配 HTML img 标签
+				const htmlImageRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/g;
+				while ((match = htmlImageRegex.exec(content)) !== null) {
+					const path = match[1].split('#')[0].split('?')[0];
 					if (mediaFiles.has(path)) {
 						referencedFiles.add(path);
 					}
