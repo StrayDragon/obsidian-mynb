@@ -1,4 +1,5 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFolder, TFile, Modal, ItemView, WorkspaceLeaf, Editor, Platform } from 'obsidian';
+import * as yaml from 'js-yaml';
 
 const PLUGIN_NAME: string = "MyNBPlugin";
 
@@ -97,6 +98,48 @@ export default class MyNBPlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file) => {
+				// 功能-右键文件浏览器：添加路径标签
+				if (file instanceof TFile && file.extension === "md") {
+					menu.addItem((item) => {
+						item
+							.setTitle("标签-添加路径标签")
+							.setIcon("tag")
+							.onClick(async () => {
+								try {
+									const success = await this.addPathTagsToFile(file);
+									if (success) {
+										new Notice(`成功添加路径标签: ${file.parent?.path || ""}`);
+									} else {
+										new Notice("添加路径标签失败或文件在根目录");
+									}
+								} catch (error) {
+									new Notice(`添加路径标签失败: ${error.message}`);
+								}
+							});
+					});
+				}
+
+				// 功能-右键文件夹：递归添加路径标签
+				if (file instanceof TFolder) {
+					menu.addItem((item) => {
+						item
+							.setTitle("标签-递归添加路径标签")
+							.setIcon("tag")
+							.onClick(async () => {
+								try {
+									const result = await this.addPathTagsToFolder(file);
+									if (result.success > 0 || result.failed > 0) {
+										new Notice(`路径标签添加完成: ${result.success} 个成功, ${result.failed} 个失败`);
+									} else {
+										new Notice("文件夹中没有找到 Markdown 笔记");
+									}
+								} catch (error) {
+									new Notice(`添加路径标签失败: ${error.message}`);
+								}
+							});
+					});
+				}
+
 				// 功能-右键文件浏览器：添加文菜单项
 				if (file instanceof TFolder && file.path !== "/") {
 					menu.addItem((item) => {
@@ -186,12 +229,53 @@ export default class MyNBPlugin extends Plugin {
 			})
 		);
 
-		// 功能-右键文件浏览器: 合并笔记
+		// 添加多选文件菜单支持
 		this.registerEvent(
 			this.app.workspace.on("files-menu", (menu, files) => {
-				// 过滤出 Markdown 文件
+				// 过滤出 Markdown 文件和文件夹
 				const mdFiles = files.filter(file => file instanceof TFile && file.extension === "md") as TFile[];
+				const folders = files.filter(file => file instanceof TFolder) as TFolder[];
 
+				if (mdFiles.length > 0 || folders.length > 0) {
+					menu.addItem((item) => {
+						item
+							.setTitle(`标签-批量添加路径标签`)
+							.setIcon("tag")
+							.onClick(async () => {
+								try {
+									let totalSuccess = 0;
+									let totalFailed = 0;
+
+									// 处理单个文件
+									for (const file of mdFiles) {
+										const success = await this.addPathTagsToFile(file);
+										if (success) {
+											totalSuccess++;
+										} else {
+											totalFailed++;
+										}
+									}
+
+									// 处理文件夹
+									for (const folder of folders) {
+										const result = await this.addPathTagsToFolder(folder);
+										totalSuccess += result.success;
+										totalFailed += result.failed;
+									}
+
+									if (totalSuccess > 0 || totalFailed > 0) {
+										new Notice(`路径标签添加完成: ${totalSuccess} 个成功, ${totalFailed} 个失败`);
+									} else {
+										new Notice("没有找到需要处理的 Markdown 笔记");
+									}
+								} catch (error) {
+									new Notice(`添加路径标签失败: ${error.message}`);
+								}
+							});
+					});
+				}
+
+				// 功能-右键文件浏览器: 合并笔记
 				if (mdFiles.length > 1) {
 					menu.addItem((item) => {
 						item
@@ -545,6 +629,106 @@ export default class MyNBPlugin extends Plugin {
 
 		workspace.revealLeaf(leaf);
 		return leaf.view as UnreferencedMediaView;
+	}
+
+	private async updateFileFrontmatter(file: TFile, updater: (frontmatter: any) => void) {
+		try {
+			const content = await this.app.vault.read(file);
+			const yamlRegex = /^---\n([\s\S]*?)\n---\n/;
+			const match = content.match(yamlRegex);
+
+			let frontmatter: any = {};
+			let newContent: string;
+
+			if (match) {
+				// 解析现有的 frontmatter
+				try {
+					frontmatter = yaml.load(match[1]) || {};
+				} catch (e) {
+					this.debugLog("YAML parse error:", e);
+					frontmatter = {};
+				}
+
+				// 更新 frontmatter
+				updater(frontmatter);
+
+				// 重建 frontmatter
+				const newYaml = yaml.dump(frontmatter, {
+					quotingType: '"',
+					forceQuotes: true,
+					lineWidth: -1
+				});
+
+				// 替换原有的 frontmatter
+				newContent = content.replace(yamlRegex, `---\n${newYaml}---\n`);
+			} else {
+				// 创建新的 frontmatter
+				updater(frontmatter);
+				const newYaml = yaml.dump(frontmatter, {
+					quotingType: '"',
+					forceQuotes: true,
+					lineWidth: -1
+				});
+				newContent = `---\n${newYaml}---\n\n${content}`;
+			}
+
+			// 保存更新后的内容
+			await this.app.vault.modify(file, newContent);
+			return true;
+		} catch (error) {
+			this.debugLog("Failed to update frontmatter:", error);
+			return false;
+		}
+	}
+
+	private async addPathTagsToFile(file: TFile): Promise<boolean> {
+		try {
+			const relativePath = file.parent ? file.parent.path : "";
+			const pathTag = relativePath.replace(/\\/g, '/');
+
+			if (!pathTag || pathTag === "/") {
+				return false;
+			}
+
+			const success = await this.updateFileFrontmatter(file, (frontmatter) => {
+				if (!frontmatter.tags) {
+					frontmatter.tags = [];
+				} else if (!Array.isArray(frontmatter.tags)) {
+					frontmatter.tags = [frontmatter.tags];
+				}
+				if (!frontmatter.tags.includes(pathTag)) {
+					frontmatter.tags.push(pathTag);
+				}
+			});
+
+			return success;
+		} catch (error) {
+			this.debugLog("Failed to add path tag to file:", error);
+			return false;
+		}
+	}
+
+	private async addPathTagsToFolder(folder: TFolder): Promise<{ success: number; failed: number }> {
+		let successCount = 0;
+		let failedCount = 0;
+
+		const processFiles = async (currentFolder: TFolder) => {
+			for (const child of currentFolder.children) {
+				if (child instanceof TFile && child.extension === "md") {
+					const success = await this.addPathTagsToFile(child);
+					if (success) {
+						successCount++;
+					} else {
+						failedCount++;
+					}
+				} else if (child instanceof TFolder) {
+					await processFiles(child);
+				}
+			}
+		};
+
+		await processFiles(folder);
+		return { success: successCount, failed: failedCount };
 	}
 }
 
