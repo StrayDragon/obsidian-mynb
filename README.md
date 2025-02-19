@@ -13,6 +13,8 @@
     - ![image](./docs/assets/merge-notes.webp)
   - 导出为 Hugo 博客文章
     - ![image](./docs/assets/export-to-hugo.webp)
+  - 添加笔记路径所在标签
+    - ![image](./docs/assets/add-path-tags.webp)
 - 右键编辑区
   - 调整标题级别
     - ![image](./docs/assets/adjust-heading-level.webp)
